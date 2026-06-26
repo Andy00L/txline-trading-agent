@@ -4,7 +4,26 @@ This runbook finishes M4 on devnet. It deploys the `agent_ledger` program, then 
 end to end proof: commit a sealed decision before reveal, settle it by CPI into the live
 `txoracle::validate_stat`, and confirm a tampered proof is rejected. The runnable script is
 [tools/devnet/src/settle-e2e.ts](../../tools/devnet/src/settle-e2e.ts); it drives the exact
-production path (`TxlineClient` to `buildSettleArgs` to `SolanaOnChainPort`).
+production path (`TxlineClient` to `buildSettleArgs` to `SolanaOnChainPort`). A smaller
+write-path smoke test, [tools/devnet/src/commit-demo.ts](../../tools/devnet/src/commit-demo.ts),
+does initialize plus commit only and needs no TxLINE token.
+
+## Current devnet status (2026-06-26)
+
+Done and verified on devnet:
+
+- `agent_ledger` deployed at `FLZiKMUaPAGMtPLbfHvHwfiVfkTZD8RZ84CSrkDy1kLD` (authority
+  `8SafovV7444FGu3fGUJDWiqkrwsLpamsCH7buQyjKe5P`, data length 271336 bytes).
+- `initialize_strategy` and `commit_decision` executed through the production
+  `SolanaOnChainPort` via `commit-demo`. Strategy PDA
+  `J5Ad795qHZFrhoDLFQsBSfNz45Lnm8wQu9JMVLmisy7u` (173 bytes, program owned), first
+  `DecisionCommit` PDA `ABaq1SdZtWukvZdP6EFCm3r4MHhNMN7z39EEotG3qE2` (125 bytes), read back
+  open. The account sizes confirm the borsh layout constants.
+
+Remaining: the settle CPI, which needs a TxLINE API token (free World Cup tier: guest auth,
+on-chain `subscribe`, then activate) and a finished World Cup fixture whose scores root is
+posted. Run `settle-e2e` once `.env` has `TXLINE_JWT`, `TXLINE_API_TOKEN`, `E2E_FIXTURE_ID`,
+and `E2E_SEQ`.
 
 ## What this proves
 
