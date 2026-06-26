@@ -219,6 +219,44 @@ const main = async (): Promise<void> => {
   }
   console.log(`[settle-e2e] settled decision B won=${settledB.value.won} pnl=${settledB.value.pnl}: ${explorerTx(settledB.value.txSig)}`);
 
+  // Decision C: prove the fixture binding (M8 audit V1). A proof for a different fixture must
+  // be rejected, so a winning proof from another match cannot be substituted.
+  const decisionC = await commitDecision(port, strategyBytes, fixtureId, claimedResult);
+  const settleArgsC = buildSettleArgs({ validation, reveal: decisionC.reveal, claimedResult });
+  if (!settleArgsC.ok) {
+    return fail(`buildSettleArgs (C) failed: ${settleArgsC.error.field} ${settleArgsC.error.detail}`);
+  }
+  const wrongFixtureArgs: SettleArgsInput = {
+    ...settleArgsC.value,
+    fixtureSummary: {
+      ...settleArgsC.value.fixtureSummary,
+      fixtureId: settleArgsC.value.fixtureSummary.fixtureId + 1n,
+    },
+  };
+  const fixtureAttempt = await port.settle({ index: decisionC.index, settleArgs: wrongFixtureArgs });
+  if (fixtureAttempt.ok) {
+    return fail('SECURITY FAILURE: a settle with a mismatched fixture summary succeeded (V1)');
+  }
+  console.log(`[settle-e2e] mismatched-fixture settle correctly rejected (V1): ${fixtureAttempt.error.detail}`);
+
+  // Decision D: prove the stat-key pin (M8 audit V2). Swapping the home and away stats must be
+  // rejected, so the (home - away) predicate cannot be made to test the winning participant.
+  const decisionD = await commitDecision(port, strategyBytes, fixtureId, claimedResult);
+  const settleArgsD = buildSettleArgs({ validation, reveal: decisionD.reveal, claimedResult });
+  if (!settleArgsD.ok) {
+    return fail(`buildSettleArgs (D) failed: ${settleArgsD.error.field} ${settleArgsD.error.detail}`);
+  }
+  const swappedStatArgs: SettleArgsInput = {
+    ...settleArgsD.value,
+    statHome: settleArgsD.value.statAway,
+    statAway: settleArgsD.value.statHome,
+  };
+  const statAttempt = await port.settle({ index: decisionD.index, settleArgs: swappedStatArgs });
+  if (statAttempt.ok) {
+    return fail('SECURITY FAILURE: a settle with swapped stat keys succeeded (V2)');
+  }
+  console.log(`[settle-e2e] swapped-stat settle correctly rejected (V2): ${statAttempt.error.detail}`);
+
   const finalState = await port.readStrategy();
   if (finalState.ok && finalState.value !== null) {
     console.log(`[settle-e2e] strategy bankroll ${finalState.value.bankroll} realizedPnl ${finalState.value.realizedPnl} wins ${finalState.value.wins} losses ${finalState.value.losses}`);

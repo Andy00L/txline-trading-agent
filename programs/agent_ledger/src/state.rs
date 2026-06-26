@@ -7,10 +7,21 @@ pub const STATUS_OPEN: u8 = 0;
 pub const STATUS_SETTLED: u8 = 1;
 pub const STATUS_VOID: u8 = 2;
 
-// 1X2 result sides, matching the off-chain Outcome ordering (home, draw, away).
+// 1X2 result sides in participant space: side 0 = participant 1 wins, 1 = draw,
+// 2 = participant 2 wins. The off-chain agent seals reveal.side and derives claimed_result
+// in this same space (participant 1 is labelled "home" off-chain). sourceRef:
+// docs/research/M0-recon-findings.md (the 1X2 market and stat keys are participant-indexed).
 pub const SIDE_HOME: u8 = 0;
 pub const SIDE_DRAW: u8 = 1;
 pub const SIDE_AWAY: u8 = 2;
+
+// Canonical 1X2 settle stats: full-time participant goal keys (base 1 = participant 1 goals,
+// 2 = participant 2 goals; period 0 = full game). settle pins the two stats to these so the
+// (stat_home - stat_away) predicate always tests participant 1 vs participant 2 goals and the
+// stats cannot be swapped to make a chosen claim hold. sourceRef: M0-recon-findings.md A-3.
+pub const STAT_KEY_PARTICIPANT1: u32 = 1;
+pub const STAT_KEY_PARTICIPANT2: u32 = 2;
+pub const FULL_GAME_PERIOD: i32 = 0;
 
 // A void is only allowed within this window after commit, so it cannot dodge an
 // imminent loss late in a match. It is wide enough to cover a pre-kickoff

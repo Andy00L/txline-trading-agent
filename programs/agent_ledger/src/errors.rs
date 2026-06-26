@@ -8,6 +8,10 @@ pub enum AgentError {
     CommitMismatch,
     #[msg("Reveal fixture, market, or strategy does not match the decision")]
     RoutingMismatch,
+    #[msg("Proven fixture summary does not match the committed decision's fixture")]
+    FixtureMismatch,
+    #[msg("Settle stats are not the canonical participant goal keys at full time")]
+    StatKeyMismatch,
     #[msg("CPI target is not the strategy's pinned txline program")]
     TxlineProgramMismatch,
     #[msg("Claimed result is not a valid 1X2 side")]

@@ -100,6 +100,25 @@ pub mod agent_ledger {
             AgentError::RoutingMismatch
         );
 
+        // Bind the oracle proof to THIS decision's fixture: the proven summary must be for the
+        // committed fixture, so a winning proof from a different match the same UTC day cannot
+        // be substituted to fabricate a result.
+        require!(
+            args.fixture_summary.fixture_id == ctx.accounts.decision.fixture_id,
+            AgentError::FixtureMismatch
+        );
+        // Pin the two settle stats to the canonical participant goal keys at full time. Without
+        // this, stat_home and stat_away are caller-supplied and could be swapped so the
+        // (stat_home - stat_away) predicate tests the winning participant regardless of the
+        // sealed side; pinning forces it to test participant 1 vs participant 2 goals.
+        require!(
+            args.stat_home.stat_to_prove.key == STAT_KEY_PARTICIPANT1
+                && args.stat_away.stat_to_prove.key == STAT_KEY_PARTICIPANT2
+                && args.stat_home.stat_to_prove.period == FULL_GAME_PERIOD
+                && args.stat_away.stat_to_prove.period == FULL_GAME_PERIOD,
+            AgentError::StatKeyMismatch
+        );
+
         require_keys_eq!(
             ctx.accounts.txline_program.key(),
             ctx.accounts.strategy.txline_program,
@@ -118,8 +137,10 @@ pub mod agent_ledger {
             AgentError::InvalidRootsPda
         );
 
-        // Prove (home goals - away goals) satisfies the predicate. Reverts the whole
-        // settle on a bad proof, a false predicate, or a missing root.
+        // Prove (participant 1 goals - participant 2 goals) satisfies the predicate. Reverts
+        // the whole settle on a bad proof, a false predicate, or a missing root. validate_stat
+        // is a pure assertion over a read-only account: it writes nothing and never touches
+        // strategy or decision, so no account reload is needed after this CPI.
         cpi_validate_stat(
             ctx.accounts.txline_program.to_account_info(),
             ctx.accounts.daily_scores_merkle_roots.to_account_info(),
@@ -148,7 +169,7 @@ pub mod agent_ledger {
         strategy.realized_pnl =
             strategy.realized_pnl.checked_add(pnl).ok_or(AgentError::Overflow)?;
         strategy.bankroll = apply_pnl(strategy.bankroll, pnl).ok_or(AgentError::Overflow)?;
-        strategy.open_count = strategy.open_count.saturating_sub(1);
+        strategy.open_count = strategy.open_count.checked_sub(1).ok_or(AgentError::Overflow)?;
         strategy.settled_count =
             strategy.settled_count.checked_add(1).ok_or(AgentError::Overflow)?;
         if won {
@@ -175,10 +196,11 @@ pub mod agent_ledger {
         require!(computed == ctx.accounts.decision.commit_hash, AgentError::CommitMismatch);
 
         let clock = Clock::get()?;
-        require!(
-            clock.unix_timestamp - ctx.accounts.decision.commit_unix_ts <= VOID_GRACE_SECONDS,
-            AgentError::VoidGraceElapsed
-        );
+        let elapsed = clock
+            .unix_timestamp
+            .checked_sub(ctx.accounts.decision.commit_unix_ts)
+            .ok_or(AgentError::Overflow)?;
+        require!(elapsed <= VOID_GRACE_SECONDS, AgentError::VoidGraceElapsed);
 
         let decision = &mut ctx.accounts.decision;
         decision.status = STATUS_VOID;
@@ -186,7 +208,7 @@ pub mod agent_ledger {
         decision.settle_slot = clock.slot;
 
         let strategy = &mut ctx.accounts.strategy;
-        strategy.open_count = strategy.open_count.saturating_sub(1);
+        strategy.open_count = strategy.open_count.checked_sub(1).ok_or(AgentError::Overflow)?;
         strategy.pushes = strategy.pushes.checked_add(1).ok_or(AgentError::Overflow)?;
 
         emit!(DecisionVoided {
