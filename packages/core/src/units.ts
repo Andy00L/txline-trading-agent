@@ -11,7 +11,7 @@
 import { err, ok, type Result } from './result.js';
 
 declare const brand: unique symbol;
-type Brand<TBase, TBrand extends string> = TBase & { readonly [brand]: TBrand };
+export type Brand<TBase, TBrand extends string> = TBase & { readonly [brand]: TBrand };
 
 /** Decimal odds multiplied by 1000 (three-decimal precision). 2.0 odds -> 2000. */
 export type DecimalOddsMilli = Brand<number, 'DecimalOddsMilli'>;
@@ -73,6 +73,10 @@ export const microUsd = (value: bigint): Result<MicroUsd, UnitError> => {
   }
   return ok(value as MicroUsd);
 };
+
+/** Brand a bigint as MicroUsd, saturating any negative value to 0. Infallible; for
+ * computed amounts already known to be non-negative, such as a Kelly stake. */
+export const microUsdSaturating = (value: bigint): MicroUsd => (value < 0n ? 0n : value) as MicroUsd;
 
 /** Convert whole USD (integer or up to 6 decimals) to MicroUsd, rounded to the micro. */
 export const usdToMicroUsd = (wholeUsd: number): Result<MicroUsd, UnitError> => {

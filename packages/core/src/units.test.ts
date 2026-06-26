@@ -5,6 +5,7 @@ import {
   decimalOddsMilliToProb,
   decimalOddsMilliToString,
   microUsd,
+  microUsdSaturating,
   pctStringToProb,
   prob,
   probToBps,
@@ -109,6 +110,11 @@ describe('money', () => {
     expect(usdToMicroUsd(1)).toEqual(ok(1_000_000n));
     expect(usdToMicroUsd(0.5)).toEqual(ok(500_000n));
     expect(usdToMicroUsd(-1).ok).toBe(false);
+  });
+
+  it('saturates negative computed amounts to 0', () => {
+    expect(microUsdSaturating(250n)).toBe(250n);
+    expect(microUsdSaturating(-5n)).toBe(0n);
   });
 });
 
