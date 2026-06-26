@@ -118,3 +118,63 @@ pub struct DecisionVoided {
     pub strategy: Pubkey,
     pub index: u64,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::txline_cpi::{ProofNode, ScoreStat, ScoresUpdateStats, StatTerm};
+
+    // Canonical settle inputs pinned as a cross-language golden. The onchain-client
+    // TS encoder must reproduce this exact borsh (settle-encode.test.ts).
+    fn canonical_settle() -> SettleArgs {
+        SettleArgs {
+            reveal: RevealArgs {
+                strategy: Pubkey::new_from_array([1u8; 32]),
+                index: 1,
+                fixture_id: 17_588_227,
+                market: 0,
+                side: SIDE_HOME,
+                fair_prob_bps: 5263,
+                entry_odds_milli: 2100,
+                stake: 25_000_000,
+                signal_hash: [7u8; 32],
+                nonce: [9u8; 32],
+            },
+            claimed_result: SIDE_HOME,
+            ts: 1_750_000_000_000,
+            fixture_summary: ScoresBatchSummary {
+                fixture_id: 17_588_227,
+                update_stats: ScoresUpdateStats {
+                    update_count: 5,
+                    min_timestamp: 1_750_000_000_000,
+                    max_timestamp: 1_750_000_300_000,
+                },
+                events_sub_tree_root: [10u8; 32],
+            },
+            fixture_proof: vec![ProofNode { hash: [11u8; 32], is_right_sibling: true }],
+            main_tree_proof: vec![ProofNode { hash: [12u8; 32], is_right_sibling: false }],
+            stat_home: StatTerm {
+                stat_to_prove: ScoreStat { key: 1, value: 2, period: 0 },
+                event_stat_root: [13u8; 32],
+                stat_proof: vec![ProofNode { hash: [14u8; 32], is_right_sibling: true }],
+            },
+            stat_away: StatTerm {
+                stat_to_prove: ScoreStat { key: 2, value: 1, period: 0 },
+                event_stat_root: [13u8; 32],
+                stat_proof: vec![ProofNode { hash: [15u8; 32], is_right_sibling: false }],
+            },
+        }
+    }
+
+    #[test]
+    fn canonical_settle_args_borsh_is_stable() {
+        let bytes = canonical_settle().try_to_vec().unwrap();
+        let hex: String = bytes.iter().map(|byte| format!("{:02x}", byte)).collect();
+        // The onchain-client TS encoder reproduces this exact borsh
+        // (packages/onchain-client/src/settle-encode.test.ts). Keep both in sync.
+        assert_eq!(
+            hex,
+            "0101010101010101010101010101010101010101010101010101010101010101010000000000000003600c01000000000000008f143408000040787d0100000000070707070707070707070707070707070707070707070707070707070707070709090909090909090909090909090909090909090909090909090909090909090000dc20749701000003600c01000000000500000000dc207497010000e06f2574970100000a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a010000000b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b01010000000c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c000100000002000000000000000d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d010000000e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e010200000001000000000000000d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d010000000f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f00"
+        );
+    }
+}
