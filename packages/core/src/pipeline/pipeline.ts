@@ -2,8 +2,9 @@ import { buildDecision, type DecisionConfig } from '../decision/build.js';
 import type { Decision } from '../domain/decision.js';
 import type { DevigMethod } from '../domain/fairbook.js';
 import { fairProbOf } from '../domain/fairbook.js';
-import type { OddsUpdate } from '../domain/events.js';
+import type { OddsUpdate, ScoreUpdate } from '../domain/events.js';
 import { OUTCOMES_1X2, type MarketKey, type Outcome } from '../domain/market.js';
+import { isFinalGameState } from '../domain/score-state.js';
 import type { Feed, FeedEnvelope } from '../feed.js';
 import { computeFairBook } from '../quant/devig.js';
 import { createRiskState, onCommit, onSettlement } from '../risk/manager.js';
@@ -43,7 +44,12 @@ type MarketState = {
   readonly lastOdds: Map<Outcome, DecimalOddsMilli>;
 };
 
-type ScoreState = { readonly homeGoals: number; readonly awayGoals: number; readonly tsMs: number };
+type ScoreState = {
+  readonly homeGoals: number;
+  readonly awayGoals: number;
+  readonly tsMs: number;
+  readonly seq: number;
+};
 
 type OpenPosition = { readonly index: number; readonly decision: Decision; readonly committedAtMs: number };
 
@@ -53,6 +59,9 @@ type PipelineState = {
   readonly scores: Map<number, ScoreState>;
   readonly open: OpenPosition[];
   readonly actedMarkets: Set<MarketKey>;
+  /** Indices already settled, so the final-whistle path and the end-of-feed sweep never
+   * settle the same position twice. */
+  readonly settled: Set<number>;
   decisionsCount: number;
 };
 
@@ -189,56 +198,94 @@ const handleOdds = async (
   return 0;
 };
 
-/** Track the latest fully-scored update per fixture; the final one settles the bets. */
-const handleScore = (
-  state: PipelineState,
-  homeGoals: number | null,
-  awayGoals: number | null,
-  fixtureId: number,
-  tsMs: number,
-): void => {
-  if (homeGoals === null || awayGoals === null) {
+/** Track the latest fully-scored update per fixture; a final-whistle one settles the bets. */
+const handleScore = (state: PipelineState, score: ScoreUpdate): void => {
+  if (score.homeGoals === null || score.awayGoals === null) {
     return;
   }
-  state.scores.set(fixtureId, { homeGoals, awayGoals, tsMs });
+  state.scores.set(score.fixtureId, {
+    homeGoals: score.homeGoals,
+    awayGoals: score.awayGoals,
+    tsMs: score.tsMs,
+    seq: score.seq,
+  });
 };
 
-/** Settle every open position against the final tracked score for its fixture. */
-const settleAll = async (
+/**
+ * Settle one open position against a tracked score: derive the 1X2 result, compute PnL,
+ * fold it into the risk state, and emit it to the sink with the closing fair probability
+ * (for CLV) and the settled seq (for the on-chain proof). Idempotent per index, so the
+ * final-whistle path and the end-of-feed sweep cannot double-settle one position.
+ */
+const settlePosition = async (
   state: PipelineState,
+  position: OpenPosition,
+  score: ScoreState,
   sink: PipelineSink,
-): Promise<number> => {
-  let settled = 0;
+): Promise<boolean> => {
+  if (state.settled.has(position.index)) {
+    return false;
+  }
+  const result = resultOf(score.homeGoals, score.awayGoals);
+  const won = result === position.decision.outcome;
+  const pnl = computePnl(won, position.decision.stake, position.decision.entryOddsMilli);
+  state.riskState = onSettlement(state.riskState, {
+    stake: position.decision.stake,
+    pnl,
+    fixtureId: position.decision.fixtureId,
+    marketKey: position.decision.marketKey,
+  });
+  const closingFairProb =
+    state.markets.get(position.decision.marketKey)?.lastFairProb.get(position.decision.outcome) ??
+    position.decision.fairProb;
+  state.settled.add(position.index);
+  const settledPosition: SettledPosition = {
+    index: position.index,
+    decision: position.decision,
+    result,
+    won,
+    pnl,
+    settledAtMs: score.tsMs,
+    settledSeq: score.seq,
+    closingFairProb,
+  };
+  await sink.onSettle(settledPosition);
+  return true;
+};
+
+/**
+ * Settle every still-open position on one fixture against its final-whistle score. This is
+ * the live settlement trigger: a never-ending SSE feed settles when a match ends, not when
+ * the feed completes.
+ */
+const settleFinalFixture = async (
+  state: PipelineState,
+  fixtureId: number,
+  sink: PipelineSink,
+): Promise<void> => {
+  const score = state.scores.get(fixtureId);
+  if (!score) {
+    return;
+  }
+  for (const position of state.open) {
+    if (position.decision.fixtureId === fixtureId) {
+      await settlePosition(state, position, score, sink);
+    }
+  }
+};
+
+/**
+ * End-of-feed sweep: settle any position not already settled by a final whistle against the
+ * last tracked score for its fixture. Covers a replay window that ends before the final
+ * whistle, so a green backtest still settles every bet it has a score for.
+ */
+const settleAll = async (state: PipelineState, sink: PipelineSink): Promise<void> => {
   for (const position of state.open) {
     const score = state.scores.get(position.decision.fixtureId);
-    if (!score) {
-      continue;
+    if (score) {
+      await settlePosition(state, position, score, sink);
     }
-    const result = resultOf(score.homeGoals, score.awayGoals);
-    const won = result === position.decision.outcome;
-    const pnl = computePnl(won, position.decision.stake, position.decision.entryOddsMilli);
-    state.riskState = onSettlement(state.riskState, {
-      stake: position.decision.stake,
-      pnl,
-      fixtureId: position.decision.fixtureId,
-      marketKey: position.decision.marketKey,
-    });
-    const closingFairProb =
-      state.markets.get(position.decision.marketKey)?.lastFairProb.get(position.decision.outcome) ??
-      position.decision.fairProb;
-    const settledPosition: SettledPosition = {
-      index: position.index,
-      decision: position.decision,
-      result,
-      won,
-      pnl,
-      settledAtMs: score.tsMs,
-      closingFairProb,
-    };
-    await sink.onSettle(settledPosition);
-    settled += 1;
   }
-  return settled;
 };
 
 /**
@@ -260,6 +307,7 @@ export const runPipeline = async (
     scores: new Map(),
     open: [],
     actedMarkets: new Set(),
+    settled: new Set(),
     decisionsCount: 0,
   };
   let committed = 0;
@@ -270,13 +318,16 @@ export const runPipeline = async (
       committed += await handleOdds(state, event.envelope, config, sink);
     } else if (event.kind === 'score') {
       const score = event.envelope.payload;
-      handleScore(state, score.homeGoals, score.awayGoals, score.fixtureId, score.tsMs);
+      handleScore(state, score);
+      if (isFinalGameState(score.gameState)) {
+        await settleFinalFixture(state, score.fixtureId, sink);
+      }
     }
   }
-  const settled = await settleAll(state, sink);
+  await settleAll(state, sink);
   return {
     committed,
-    settled,
+    settled: state.settled.size,
     finalBankroll: state.riskState.bankroll,
     eventsProcessed,
   };

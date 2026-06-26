@@ -69,7 +69,14 @@ const oddsEvent = (
   },
 });
 
-const scoreEvent = (seq: number, tsMs: number, home: number, away: number): FeedEvent => ({
+// gameState 'F' is the live-confirmed final (ended) phase. sourceRef: score-state.ts (O9).
+const scoreEvent = (
+  seq: number,
+  tsMs: number,
+  home: number,
+  away: number,
+  gameState = 'F',
+): FeedEvent => ({
   kind: 'score',
   envelope: {
     source: 'replay',
@@ -79,7 +86,7 @@ const scoreEvent = (seq: number, tsMs: number, home: number, away: number): Feed
       fixtureId: FIXTURE_ID,
       seq,
       tsMs,
-      gameState: 'finished',
+      gameState,
       participant1IsHome: true,
       homeGoals: home,
       awayGoals: away,
@@ -166,5 +173,30 @@ describe('runPipeline', () => {
 
     expect(serialize(first.commits)).toBe(serialize(second.commits));
     expect(serialize(first.settles)).toBe(serialize(second.settles));
+  });
+
+  it('settles on the final-whistle score, not an in-running snapshot (A-9)', async () => {
+    // Same steam-up entry on home, but an in-running 0-0 ('H1') arrives before the final
+    // 2-1 ('F'). Settling on the in-running snapshot would score the home bet a draw-loss;
+    // only the final whistle must settle it, as a home win against seq 4.
+    const sink = new RecordingSink();
+    const result = await runPipeline(
+      new ArrayFeed([
+        oddsEvent(0, 1_000, 2600, 3600, 3600),
+        oddsEvent(1, 60_000, 2300, 3800, 3800),
+        oddsEvent(2, 120_000, 2100, 4000, 4000),
+        scoreEvent(3, 3_000_000, 0, 0, 'H1'),
+        scoreEvent(4, 7_200_000, 2, 1, 'F'),
+      ]),
+      sink,
+      config,
+    );
+
+    expect(result.settled).toBe(1);
+    expect(sink.settles).toHaveLength(1);
+    const settled = sink.settles[0];
+    expect(settled?.settledSeq).toBe(4);
+    expect(settled?.result).toBe('home');
+    expect(settled?.won).toBe(true);
   });
 });

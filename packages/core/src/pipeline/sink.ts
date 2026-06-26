@@ -25,6 +25,10 @@ export type SettledPosition = {
   /** Signed realized PnL in micro-USD (profit on a win, -stake on a loss). */
   readonly pnl: bigint;
   readonly settledAtMs: number;
+  /** The score (fixtureId, seq) the result was settled against. The on-chain sink fetches
+   * the stat-validation proof for this exact seq, so settlement re-proves the same score
+   * the pipeline used. */
+  readonly settledSeq: number;
   /** The last consensus fair probability for the backed outcome, the closing-line
    * input for Closing Line Value. */
   readonly closingFairProb: Prob;

@@ -88,7 +88,7 @@ const fixtureEvents = (
         fixtureId,
         seq,
         tsMs,
-        gameState: 'finished',
+        gameState: 'F',
         participant1IsHome: true,
         homeGoals: home,
         awayGoals: away,
