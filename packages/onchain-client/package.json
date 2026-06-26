@@ -1,0 +1,24 @@
+{
+  "name": "@txline-agent/onchain-client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@txline-agent/core": "workspace:*",
+    "@solana/kit": "^2.0.0",
+    "@noble/hashes": "^1.5.0"
+  }
+}

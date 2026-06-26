@@ -102,4 +102,31 @@ mod tests {
     fn epoch_day_is_two_byte_le() {
         assert_eq!(epoch_day_le(1_750_000_000_000), 20254u16.to_le_bytes());
     }
+
+    // Canonical reveal used as the cross-language golden. The onchain-client TS
+    // borsh-encoder and keccak must reproduce this exact hash, or settles fail.
+    fn canonical_reveal() -> RevealArgs {
+        RevealArgs {
+            strategy: Pubkey::new_from_array([1u8; 32]),
+            index: 1,
+            fixture_id: 17_588_227,
+            market: 0,
+            side: SIDE_HOME,
+            fair_prob_bps: 5263,
+            entry_odds_milli: 2100,
+            stake: 25_000_000,
+            signal_hash: [7u8; 32],
+            nonce: [9u8; 32],
+        }
+    }
+
+    #[test]
+    fn canonical_commit_hash_is_stable() {
+        let hash = compute_commit_hash(&canonical_reveal()).unwrap();
+        let hex: String = hash.iter().map(|byte| format!("{:02x}", byte)).collect();
+        // The onchain-client TS encoder reproduces this exact value
+        // (packages/onchain-client/src/commit-hash.test.ts). Changing the
+        // RevealArgs layout breaks the commit-reveal binding; update both sides.
+        assert_eq!(hex, "1244a9767dcb28206a7da4ad1904def66f98d0ee1f879da348e6df75eea86b92");
+    }
 }

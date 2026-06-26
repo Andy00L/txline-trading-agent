@@ -58,6 +58,28 @@ export default tseslint.config(
     rules: { 'no-restricted-imports': ['error', { patterns: FORBIDDEN_IN_TXLINE }] },
   },
   {
+    files: ['packages/onchain-client/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '@txline-agent/txline',
+                '@txline-agent/agent',
+                '@txline-agent/backtest',
+                '@txline-agent/api',
+                '@txline-agent/dashboard',
+              ],
+              message: 'onchain-client may depend on core and @solana/kit only.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ['**/*.test.ts'],
     rules: { 'id-length': 'off', '@typescript-eslint/no-non-null-assertion': 'off' },
   },
