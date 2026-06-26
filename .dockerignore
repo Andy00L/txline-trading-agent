@@ -1,0 +1,25 @@
+# Build the image from source only; install and compile happen inside the build stage.
+**/node_modules
+**/dist
+**/.turbo
+**/*.tsbuildinfo
+**/coverage
+
+# Never send secrets or local wallets into the build context.
+.env
+.env.*
+!.env.example
+**/*.keypair.json
+wallet-*.json
+
+# Rust/Anchor build output and ledgers (not needed by the TS runtime).
+target
+.anchor
+test-ledger
+
+# Repo housekeeping not needed in the image.
+.git
+.gitignore
+**/*.log
+.claude
+backtest/out
