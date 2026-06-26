@@ -172,6 +172,9 @@ const handleOdds = async (
       {
         signal,
         riskState: state.riskState,
+        // dispersion 0: TxLINE serves a single consensus price, so there is no cross-book
+        // spread for the outlier-odds breaker to act on and it is inert by design here; the
+        // breaker engages only with multi-book dispersion. sourceRef: docs/audit/M8-audit.md.
         riskContext: { consensusFairProb: fairProb, dispersion: 0 },
         nowMs,
         feedTsMs: odds.tsMs,

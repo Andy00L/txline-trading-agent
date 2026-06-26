@@ -106,7 +106,19 @@ export const createAgentRuntime = (deps: CreateAgentRuntimeDeps): AgentRuntime =
     store: deps.store,
     start: () => {
       if (run === null) {
-        run = runPipeline(tappingFeed, sink, deps.pipelineConfig);
+        run = runPipeline(tappingFeed, sink, deps.pipelineConfig).catch((error: unknown) => {
+          // A rejecting pipeline must not become an unobserved rejection that crashes the
+          // process; record it and resolve to a terminal result so stop() stays clean.
+          const detail = error instanceof Error ? error.message : String(error);
+          deps.store.recordError('pipeline', detail);
+          deps.log(`[createAgentRuntime] pipeline failed: ${detail}`);
+          return {
+            committed: 0,
+            settled: 0,
+            finalBankroll: deps.pipelineConfig.startingBankroll,
+            eventsProcessed: 0,
+          };
+        });
       }
     },
     stop: async () => {

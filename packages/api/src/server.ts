@@ -56,10 +56,14 @@ const handleEvents = (
     response.write(': ping\n\n');
   }, SSE_PING_MS);
   ping.unref(); // the keep-alive timer must not hold the process open on its own
-  request.on('close', () => {
+  const cleanup = (): void => {
     clearInterval(ping);
     unsubscribe();
-  });
+  };
+  request.on('close', cleanup);
+  // A write to a client that vanished mid-flush surfaces as a stream error; treat it as a
+  // disconnect so an unhandled 'error' event cannot crash the process.
+  response.on('error', cleanup);
 };
 
 const handleRequest = (

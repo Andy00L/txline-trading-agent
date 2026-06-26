@@ -1,6 +1,11 @@
 import { bootstrapAgentRuntime } from '@txline-agent/agent';
 import { startApiServer } from './server.js';
 
+// Force a prompt exit if the feed has not unwound within this window after a stop signal.
+const SHUTDOWN_GRACE_MS = 8000;
+const delay = (durationMs: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, durationMs));
+
 /**
  * Process entrypoint for the headless agent: bootstrap the live runtime from the environment
  * (TxLINE token plus the devnet wallet), start the read-only API, then run the pipeline. A
@@ -29,10 +34,18 @@ const main = async (): Promise<void> => {
     shuttingDown = true;
     console.log(`[main] ${signal} received, shutting down`);
     await server.close();
-    const result = await runtime.stop();
-    console.log(
-      `[main] stopped: committed ${result.committed}, settled ${result.settled}, events ${result.eventsProcessed}`,
-    );
+    // Bound the stop: the feed unwinds on its next event or heartbeat, but if the upstream is
+    // silent we still exit promptly rather than hang the container after SIGTERM.
+    const summary = await Promise.race([
+      runtime
+        .stop()
+        .then(
+          (result) =>
+            `committed ${result.committed}, settled ${result.settled}, events ${result.eventsProcessed}`,
+        ),
+      delay(SHUTDOWN_GRACE_MS).then(() => 'shutdown grace elapsed, forcing exit'),
+    ]);
+    console.log(`[main] stopped: ${summary}`);
     process.exit(0);
   };
   process.on('SIGINT', () => void shutdown('SIGINT'));

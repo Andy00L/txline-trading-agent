@@ -117,11 +117,14 @@ describe('mapScorePayload', () => {
     }
   });
 
-  it('flips home and away goals when participant 1 is away', () => {
+  it('keeps home as participant 1 regardless of participant1IsHome (participant-space)', () => {
+    // No flip: the on-chain settle proof is participant-indexed, so home goals are always
+    // participant 1 goals even when participant1IsHome is false. sourceRef: docs/audit/M8-audit.md.
     const result = mapScorePayload({ ...baseScore, Participant1IsHome: false });
     if (result.ok) {
-      expect(result.value.homeGoals).toBe(1);
-      expect(result.value.awayGoals).toBe(2);
+      expect(result.value.homeGoals).toBe(2);
+      expect(result.value.awayGoals).toBe(1);
+      expect(result.value.participant1IsHome).toBe(false);
     }
   });
 

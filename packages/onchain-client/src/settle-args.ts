@@ -48,7 +48,8 @@ export type StatValidationInput = {
 
 export type BuildSettleArgsError =
   | { readonly kind: 'missing-second-stat'; readonly field: string; readonly detail: string }
-  | { readonly kind: 'bad-hash'; readonly field: string; readonly detail: string };
+  | { readonly kind: 'bad-hash'; readonly field: string; readonly detail: string }
+  | { readonly kind: 'bad-integer'; readonly field: string; readonly detail: string };
 
 /**
  * Convert a 32-byte Merkle hash from its wire form (a number[32] byte array) into the
@@ -111,6 +112,19 @@ const buildStatTerm = (
   });
 };
 
+// Guard the JSON-number fields that become bigints, so a malformed (non-integer or unsafe)
+// wire value returns a Result error instead of throwing out of an errors-as-values function.
+const checkSafeIntegers = (
+  fields: readonly (readonly [number, string])[],
+): BuildSettleArgsError | null => {
+  for (const [value, field] of fields) {
+    if (!Number.isSafeInteger(value)) {
+      return { kind: 'bad-integer', field, detail: `${field} must be a safe integer, got ${value}` };
+    }
+  }
+  return null;
+};
+
 /**
  * Assemble the settle_decision SettleArgs from a two-stat scores stat-validation proof
  * plus the sealed reveal and the claimed 1X2 result. The home stat comes from statToProve
@@ -139,6 +153,17 @@ export const buildSettleArgs = (input: {
       field: 'statProof2',
       detail: 'two-stat settle needs statProof2; refetch stat-validation with statKey2=2',
     });
+  }
+
+  const badInteger = checkSafeIntegers([
+    [validation.ts, 'ts'],
+    [validation.summary.fixtureId, 'summary.fixtureId'],
+    [validation.summary.updateStats.updateCount, 'summary.updateStats.updateCount'],
+    [validation.summary.updateStats.minTimestamp, 'summary.updateStats.minTimestamp'],
+    [validation.summary.updateStats.maxTimestamp, 'summary.updateStats.maxTimestamp'],
+  ]);
+  if (badInteger) {
+    return err(badInteger);
   }
 
   const eventStatRoot = bytesFromByteArray(validation.eventStatRoot, 'eventStatRoot');
