@@ -11,3 +11,4 @@ export * from './quant/index.js';
 export * from './signal/index.js';
 export * from './risk/index.js';
 export * from './decision/index.js';
+export * from './pipeline/index.js';
