@@ -16,20 +16,22 @@ const validOddsRaw = {
   Pct: ['47.619', '29.412', '27.778'],
 };
 
+const bytes32 = (value: number): number[] => Array.from({ length: 32 }, () => value);
+
 const validProof = {
   ts: 1750000200000,
   statToProve: { key: 1, value: 2, period: 0 },
-  eventStatRoot: 'aa',
+  eventStatRoot: bytes32(0xaa),
   summary: {
     fixtureId: 17588227,
     updateStats: { updateCount: 5, minTimestamp: 1750000000000, maxTimestamp: 1750000300000 },
-    eventStatsSubTreeRoot: 'bb',
+    eventStatsSubTreeRoot: bytes32(0xbb),
   },
-  statProof: [{ hash: 'cc', isRightSibling: true }],
+  statProof: [{ hash: bytes32(0xcc), isRightSibling: true }],
   subTreeProof: null,
   mainTreeProof: null,
   statToProve2: { key: 2, value: 1, period: 0 },
-  statProof2: [{ hash: 'ee', isRightSibling: false }],
+  statProof2: [{ hash: bytes32(0xee), isRightSibling: false }],
 };
 
 class MockHttp implements HttpClient {

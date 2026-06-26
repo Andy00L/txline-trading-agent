@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { RevealArgs } from './borsh.js';
 import { encodeSettleArgs } from './settle-encode.js';
-import { buildSettleArgs, decodeHash32, type StatValidationInput } from './settle-args.js';
+import { buildSettleArgs, bytesFromByteArray, type StatValidationInput } from './settle-args.js';
 
-// Repeat a single byte as a 32-byte hex string (64 hex chars), matching the byte fills
-// used in the Rust canonical_settle golden (programs/agent_ledger/src/state.rs).
-const fill = (byte: number): string => byte.toString(16).padStart(2, '0').repeat(32);
+// A 32-byte array of one repeated byte (the wire form), matching the byte fills used in
+// the Rust canonical_settle golden (programs/agent_ledger/src/state.rs).
+const fill = (byte: number): number[] => Array.from({ length: 32 }, () => byte);
 
 const toHex = (bytes: Uint8Array): string =>
   Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -98,7 +98,7 @@ describe('buildSettleArgs', () => {
   });
 
   it('rejects a malformed hash', () => {
-    const validation: StatValidationInput = { ...canonicalValidation(), eventStatRoot: 'zz' };
+    const validation: StatValidationInput = { ...canonicalValidation(), eventStatRoot: [1, 2, 3] };
     const built = buildSettleArgs({ validation, reveal: canonicalReveal(), claimedResult: 0 });
     expect(built.ok).toBe(false);
     if (built.ok) {
@@ -108,21 +108,22 @@ describe('buildSettleArgs', () => {
   });
 });
 
-describe('decodeHash32', () => {
-  it('decodes 32 bytes and tolerates a 0x prefix', () => {
-    const withPrefix = decodeHash32(`0x${fill(0xab)}`, 'h');
-    const without = decodeHash32(fill(0xab), 'h');
-    expect(withPrefix.ok).toBe(true);
-    expect(without.ok).toBe(true);
-    if (!withPrefix.ok || !without.ok) {
+describe('bytesFromByteArray', () => {
+  it('converts a 32-byte array', () => {
+    const input = Array.from({ length: 32 }, (_unused, index) => index);
+    const result = bytesFromByteArray(input, 'h');
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
       return;
     }
-    expect(toHex(withPrefix.value)).toBe(fill(0xab));
-    expect(Array.from(without.value)).toEqual(Array.from(withPrefix.value));
+    expect(Array.from(result.value)).toEqual(input);
   });
 
-  it('rejects a wrong-length hash', () => {
-    const result = decodeHash32('abcd', 'h');
-    expect(result.ok).toBe(false);
+  it('rejects a wrong-length array', () => {
+    expect(bytesFromByteArray([1, 2, 3], 'h').ok).toBe(false);
+  });
+
+  it('rejects out-of-range bytes', () => {
+    expect(bytesFromByteArray(Array.from({ length: 32 }, () => 300), 'h').ok).toBe(false);
   });
 });

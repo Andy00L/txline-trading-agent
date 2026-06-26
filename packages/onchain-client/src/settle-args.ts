@@ -13,10 +13,10 @@ import type {
  * in; it is structurally assignable). sourceRef: docs/research/txline-api.md and
  * packages/txline/src/schemas/proof.ts (the OpenAPI ScoresStatValidation, v1.5.2).
  *
- * hash and root fields arrive as hex strings (OpenAPI format binary; the leaf encoding
- * is pinned in proof.ts). Proof lists may be null, meaning an empty branch.
+ * hash and root fields arrive as 32-byte arrays (number[32]); confirmed against a live
+ * devnet response 2026-06-26. Proof lists may be null or empty, meaning an empty branch.
  */
-export type WireProofNode = { readonly hash: string; readonly isRightSibling: boolean };
+export type WireProofNode = { readonly hash: readonly number[]; readonly isRightSibling: boolean };
 export type WireScoreStat = {
   readonly key: number;
   readonly value: number;
@@ -30,12 +30,12 @@ export type WireScoresUpdateStats = {
 export type WireScoresBatchSummary = {
   readonly fixtureId: number;
   readonly updateStats: WireScoresUpdateStats;
-  readonly eventStatsSubTreeRoot: string;
+  readonly eventStatsSubTreeRoot: readonly number[];
 };
 export type StatValidationInput = {
   readonly ts: number;
   readonly statToProve: WireScoreStat;
-  readonly eventStatRoot: string;
+  readonly eventStatRoot: readonly number[];
   readonly summary: WireScoresBatchSummary;
   readonly statProof: readonly WireProofNode[] | null;
   readonly subTreeProof: readonly WireProofNode[] | null;
@@ -50,33 +50,26 @@ export type BuildSettleArgsError =
   | { readonly kind: 'missing-second-stat'; readonly field: string; readonly detail: string }
   | { readonly kind: 'bad-hash'; readonly field: string; readonly detail: string };
 
-// Matches a run of hexadecimal digits (no 0x prefix).
-const HEX_DIGITS = /^[0-9a-fA-F]+$/;
-
 /**
- * Decode a 32-byte Merkle hash from its hex-string wire form into the bytes the on-chain
- * SettleArgs borsh expects. A leading 0x is tolerated. This is the single place the leaf
- * encoding is interpreted: if a captured live response proves the wire form is not hex,
- * only this function changes. sourceRef: packages/txline/src/schemas/proof.ts (O4).
+ * Convert a 32-byte Merkle hash from its wire form (a number[32] byte array) into the
+ * Uint8Array the on-chain SettleArgs borsh expects. This is the single place the leaf
+ * encoding is interpreted. sourceRef: packages/txline/src/schemas/proof.ts (O4, confirmed
+ * against a live devnet response: hashes are byte arrays, not hex strings).
  */
-export const decodeHash32 = (
-  value: string,
+export const bytesFromByteArray = (
+  value: readonly number[],
   field: string,
 ): Result<Uint8Array, BuildSettleArgsError> => {
-  const hex = value.startsWith('0x') || value.startsWith('0X') ? value.slice(2) : value;
-  if (hex.length !== 64) {
-    return err({
-      kind: 'bad-hash',
-      field,
-      detail: `expected 64 hex chars (32 bytes), got ${hex.length}`,
-    });
-  }
-  if (!HEX_DIGITS.test(hex)) {
-    return err({ kind: 'bad-hash', field, detail: 'contains non-hex characters' });
+  if (value.length !== 32) {
+    return err({ kind: 'bad-hash', field, detail: `expected 32 bytes, got ${value.length}` });
   }
   const bytes = new Uint8Array(32);
   for (let index = 0; index < 32; index += 1) {
-    bytes[index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16);
+    const byte = value[index];
+    if (byte === undefined || !Number.isInteger(byte) || byte < 0 || byte > 255) {
+      return err({ kind: 'bad-hash', field, detail: `byte ${index} is not a 0-255 integer` });
+    }
+    bytes[index] = byte;
   }
   return ok(bytes);
 };
@@ -92,7 +85,7 @@ const convertProof = (
     if (!node) {
       continue;
     }
-    const hash = decodeHash32(node.hash, `${label}[${index}].hash`);
+    const hash = bytesFromByteArray(node.hash, `${label}[${index}].hash`);
     if (!hash.ok) {
       return hash;
     }
@@ -148,11 +141,11 @@ export const buildSettleArgs = (input: {
     });
   }
 
-  const eventStatRoot = decodeHash32(validation.eventStatRoot, 'eventStatRoot');
+  const eventStatRoot = bytesFromByteArray(validation.eventStatRoot, 'eventStatRoot');
   if (!eventStatRoot.ok) {
     return eventStatRoot;
   }
-  const eventsSubTreeRoot = decodeHash32(
+  const eventsSubTreeRoot = bytesFromByteArray(
     validation.summary.eventStatsSubTreeRoot,
     'summary.eventStatsSubTreeRoot',
   );

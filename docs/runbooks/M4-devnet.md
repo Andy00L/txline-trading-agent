@@ -20,10 +20,11 @@ Done and verified on devnet:
   `DecisionCommit` PDA `ABaq1SdZtWukvZdP6EFCm3r4MHhNMN7z39EEotG3qE2` (125 bytes), read back
   open. The account sizes confirm the borsh layout constants.
 
-Remaining: the settle CPI, which needs a TxLINE API token (free World Cup tier: guest auth,
-on-chain `subscribe`, then activate) and a finished World Cup fixture whose scores root is
-posted. Run `settle-e2e` once `.env` has `TXLINE_JWT`, `TXLINE_API_TOKEN`, `E2E_FIXTURE_ID`,
-and `E2E_SEQ`.
+Settle proven on devnet against the live txoracle, fixture 17588302 (Ecuador 2-1 Germany,
+seq 984, a home win): committed decisions before reveal, settled by CPI into
+`validate_stat` (`won=true`, pnl +25000000), and a tampered proof reverted. Final strategy
+state: bankroll 1050000000, realized pnl +50000000, wins 2, losses 0. The free World Cup
+token was minted via the `subscribe` + activate flow (World Cup `CompetitionId = 72`).
 
 ## What this proves
 
@@ -119,14 +120,13 @@ safe to invoke early.
 Open the explorer links (devnet) to see `DecisionCommitted` before kickoff and
 `DecisionSettled` after, with the settle transaction's inner CPI to the txoracle program.
 
-## One open item the live run confirms (O4)
+## O4 resolved by the live run
 
-The proof `hash` and root fields are decoded as hex by `decodeHash32`
-([packages/onchain-client/src/settle-args.ts](../../packages/onchain-client/src/settle-args.ts)),
-matching the assumption pinned in `packages/txline/src/schemas/proof.ts`. If the first real
-stat-validation response makes `buildSettleArgs` return a `bad-hash` error, the wire encoding
-is not hex (it is base64 or a byte array). That decoder is the single place to change; nothing
-else moves.
+The proof `hash` and root fields arrive as 32-byte arrays (`number[32]`), not the hex
+strings the OpenAPI `binary` format suggested. `packages/txline/src/schemas/proof.ts` now
+validates them as `byte32`, and `bytesFromByteArray`
+([packages/onchain-client/src/settle-args.ts](../../packages/onchain-client/src/settle-args.ts))
+maps them straight to `[u8;32]`. Confirmed against fixture 17588302 on devnet.
 
 ## Troubleshooting
 

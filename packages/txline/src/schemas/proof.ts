@@ -4,11 +4,15 @@ import { z } from 'zod';
  * Three-stage score Merkle proof, returned by GET /api/scores/stat-validation.
  * sourceRef: OpenAPI ScoresStatValidation and its components (v1.5.2), and the
  * repo example backup/examples/data_validation/validate_scores_onchain.ts.
- * hash and root fields are hex strings on the wire (OpenAPI format: binary); the
- * on-chain client converts them to [u8;32]. ProofNode arrays run leaf to root.
+ * Confirmed against a live devnet response 2026-06-26: hash and root fields are
+ * 32-byte arrays on the wire (number[32], not the hex strings the OpenAPI "binary"
+ * format suggested); the on-chain client maps them straight to [u8;32]. ProofNode
+ * arrays run leaf to root and may be empty.
  */
+const byte32Schema = z.array(z.number().int().min(0).max(255)).length(32);
+
 export const proofNodeSchema = z.object({
-  hash: z.string(),
+  hash: byte32Schema,
   isRightSibling: z.boolean(),
 });
 export type ProofNode = z.infer<typeof proofNodeSchema>;
@@ -22,6 +26,8 @@ export const scoreStatSchema = z.object({
 });
 export type ScoreStat = z.infer<typeof scoreStatSchema>;
 
+export type Byte32 = z.infer<typeof byte32Schema>;
+
 export const scoresUpdateStatsSchema = z.object({
   updateCount: z.number().int(),
   // Milliseconds; minTimestamp drives the daily scores PDA epoch day.
@@ -34,8 +40,8 @@ export const scoresBatchSummarySchema = z.object({
   // off-chain i32, widened to i64 on chain.
   fixtureId: z.number().int(),
   updateStats: scoresUpdateStatsSchema,
-  // Remapped to events_sub_tree_root on chain.
-  eventStatsSubTreeRoot: z.string(),
+  // 32-byte array; remapped to events_sub_tree_root on chain.
+  eventStatsSubTreeRoot: byte32Schema,
 });
 export type ScoresBatchSummary = z.infer<typeof scoresBatchSummarySchema>;
 
@@ -45,7 +51,7 @@ const proofListSchema = z.array(proofNodeSchema).nullable();
 export const scoresStatValidationSchema = z.object({
   ts: z.number().int(),
   statToProve: scoreStatSchema,
-  eventStatRoot: z.string(),
+  eventStatRoot: byte32Schema,
   summary: scoresBatchSummarySchema,
   statProof: proofListSchema,
   subTreeProof: proofListSchema,

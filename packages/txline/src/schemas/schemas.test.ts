@@ -54,20 +54,22 @@ const validFixture = {
   Participant1IsHome: true,
 };
 
+const bytes32 = (value: number): number[] => Array.from({ length: 32 }, () => value);
+
 const validStatValidation = {
   ts: 1750000200000,
   statToProve: { key: 1, value: 2, period: 0 },
-  eventStatRoot: 'aa'.repeat(32),
+  eventStatRoot: bytes32(0xaa),
   summary: {
     fixtureId: 17588227,
     updateStats: { updateCount: 5, minTimestamp: 1750000000000, maxTimestamp: 1750000300000 },
-    eventStatsSubTreeRoot: 'bb'.repeat(32),
+    eventStatsSubTreeRoot: bytes32(0xbb),
   },
-  statProof: [{ hash: 'cc'.repeat(32), isRightSibling: true }],
-  subTreeProof: [{ hash: 'dd'.repeat(32), isRightSibling: false }],
+  statProof: [{ hash: bytes32(0xcc), isRightSibling: true }],
+  subTreeProof: [{ hash: bytes32(0xdd), isRightSibling: false }],
   mainTreeProof: null,
   statToProve2: { key: 2, value: 1, period: 0 },
-  statProof2: [{ hash: 'ee'.repeat(32), isRightSibling: true }],
+  statProof2: [{ hash: bytes32(0xee), isRightSibling: true }],
 };
 
 describe('oddsPayloadSchema', () => {
