@@ -8,9 +8,15 @@ import {
   type FeedRunResult,
   type PipelineConfig,
 } from '@txline-agent/core';
+import { readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { renderHtmlReport } from './html-report.js';
 import { renderMarkdownReport } from './report.js';
 import { runBacktest } from './run.js';
+import { walkForward } from './walk-forward.js';
+import { writeReportFiles } from './write.js';
 
 const oddsMilli = (value: number): DecimalOddsMilli => {
   const result = decimalOddsMilli(value);
@@ -157,5 +163,69 @@ describe('runBacktest', () => {
     expect(first).toContain('| Bets | 2 |');
     expect(first).toContain('| Hit rate | 50.00% |');
     expect(first).toContain('## Calibration');
+  });
+
+  it('renders a deterministic, self-contained HTML report with inline SVG', async () => {
+    const run = await runBacktest(new ArrayFeed(scenario()), config);
+    const first = renderHtmlReport(run);
+    const second = renderHtmlReport(run);
+
+    expect(first).toBe(second);
+    expect(first).toContain('<!doctype html>');
+    expect(first).toContain('<svg viewBox');
+    // Self-contained: no external resources to fetch.
+    expect(first).not.toContain('http://');
+    expect(first).not.toContain('https://');
+  });
+
+  it('writes the markdown and HTML report files', async () => {
+    const run = await runBacktest(new ArrayFeed(scenario()), config);
+    const outDir = join(tmpdir(), 'txline-backtest-report-test');
+    try {
+      const written = await writeReportFiles(outDir, run);
+      const markdown = await readFile(written.markdownPath, 'utf8');
+      const html = await readFile(written.htmlPath, 'utf8');
+      expect(markdown).toContain('# Backtest report');
+      expect(html).toContain('<!doctype html>');
+    } finally {
+      await rm(outDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('walkForward', () => {
+  // A second config that never trades (its edge threshold is unreachable), so the tuner
+  // must prefer the trading config on in-sample ROI.
+  const idleConfig: PipelineConfig = {
+    ...config,
+    steam: { ...config.steam, minEdge: 0.5 },
+    divergence: { ...config.divergence, minEdge: 0.5 },
+  };
+
+  it('tunes on in-sample and evaluates the chosen config out-of-sample', async () => {
+    const result = await walkForward({
+      inSample: () => new ArrayFeed(scenario()),
+      outOfSample: () => new ArrayFeed(scenario()),
+      grid: [idleConfig, config],
+      score: (metrics) => metrics.roi,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.value.chosen).toBe(config);
+    expect(result.value.inSample.bets).toBe(2);
+    expect(result.value.outOfSample.bets).toBe(2);
+  });
+
+  it('rejects an empty grid', async () => {
+    const result = await walkForward({
+      inSample: () => new ArrayFeed(scenario()),
+      outOfSample: () => new ArrayFeed(scenario()),
+      grid: [],
+      score: (metrics) => metrics.roi,
+    });
+    expect(result.ok).toBe(false);
   });
 });
