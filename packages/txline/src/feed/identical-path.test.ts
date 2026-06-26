@@ -24,23 +24,12 @@ const oddsRaw = (fixtureId: number, tsMs: number, prices: number[]): OddsPayload
 });
 
 const scoreRaw = (fixtureId: number, tsMs: number, seq: number): ScoresPayload => ({
-  fixtureId,
-  gameState: 'H1',
-  startTime: tsMs - 1000,
-  isTeam: true,
-  fixtureGroupId: 1,
-  competitionId: 1,
-  countryId: 1,
-  sportId: 1,
-  participant1IsHome: true,
-  participant2Id: 2,
-  participant1Id: 1,
-  action: 'goal',
-  id: seq,
-  ts: tsMs,
-  connectionId: 1,
-  seq,
-  stats: { '1': 1, '2': 0 },
+  FixtureId: fixtureId,
+  GameState: 'H1',
+  Participant1IsHome: true,
+  Ts: tsMs,
+  Seq: seq,
+  Stats: { '1': 1, '2': 0 },
 });
 
 // One dataset, in tsMs order, shared by both feeds.

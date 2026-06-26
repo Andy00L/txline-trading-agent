@@ -5,6 +5,7 @@ import {
   marketKey,
   ok,
   pctStringToProb,
+  SUPER_ODDS_TYPE_1X2,
   type OddsLine,
   type OddsUpdate,
   type Prob,
@@ -31,6 +32,11 @@ export const mapOddsPayload = (raw: OddsPayload): Result<OddsUpdate, MapError> =
     });
   }
 
+  // Only the 1X2 result market maps labels to home/draw/away; handicap and over/under
+  // reuse part1/part2 for unrelated sides, so their outcomes stay "other" and the
+  // 1X2 strategy ignores them. sourceRef: domain/market.ts SUPER_ODDS_TYPE_1X2 (O2).
+  const isResult1X2 = raw.SuperOddsType === SUPER_ODDS_TYPE_1X2;
+
   const lines: OddsLine[] = [];
   for (let index = 0; index < priceNames.length; index += 1) {
     const label = priceNames[index];
@@ -54,7 +60,11 @@ export const mapOddsPayload = (raw: OddsPayload): Result<OddsUpdate, MapError> =
       }
       impliedPct = parsed.value;
     }
-    lines.push({ outcome: mapOutcomeLabel(label), decimalOddsMilli: odds.value, impliedPct });
+    lines.push({
+      outcome: isResult1X2 ? mapOutcomeLabel(label) : 'other',
+      decimalOddsMilli: odds.value,
+      impliedPct,
+    });
   }
 
   const key = marketKey({

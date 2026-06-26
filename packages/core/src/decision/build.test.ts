@@ -147,4 +147,34 @@ describe('buildDecision', () => {
     );
     expect(result.ok).toBe(false);
   });
+
+  it('sizes a steam signal by CLV-first rule even on fair odds where Kelly would skip', () => {
+    // fairProb 0.45 at odds 2.222 is ~fair, so Kelly stakes zero (no-edge); the steam
+    // sizing acts on the move instead, so a decision is still produced.
+    const result = buildDecision(
+      {
+        signal: makeSignal({
+          kind: 'steam',
+          strength: 0.04,
+          fairProb: probOf(0.45),
+          offeredOddsMilli: oddsOf(2222),
+        }),
+        riskState: createRiskState(micro(1000)),
+        riskContext: context,
+        nowMs: 1000,
+        feedTsMs: 1000,
+      },
+      {
+        ...decisionConfig,
+        steamSizing: { baseFraction: 0.02, strengthScale: 0.5, maxFraction: 0.05 },
+      },
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok && result.value.kind === 'decision') {
+      expect(result.value.decision.signalKind).toBe('steam');
+      expect(result.value.decision.stake > 0n).toBe(true);
+    } else {
+      throw new Error('expected a steam decision');
+    }
+  });
 });

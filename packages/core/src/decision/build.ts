@@ -1,6 +1,7 @@
 import type { Decision } from '../domain/decision.js';
 import type { QuantError } from '../quant/error.js';
 import { kellyStake, type KellyConfig } from '../quant/kelly.js';
+import { steamStake, type SteamSizingConfig } from '../quant/sizing.js';
 import { ok, type Result } from '../result.js';
 import { evaluate } from '../risk/manager.js';
 import type { RiskConfig, RiskContext, RiskState } from '../risk/types.js';
@@ -9,6 +10,9 @@ import type { Signal } from '../signal/types.js';
 export type DecisionConfig = {
   readonly kelly: KellyConfig;
   readonly risk: RiskConfig;
+  /** When set, steam signals are sized by this CLV-first rule instead of Kelly, because
+   * the de-margined consensus line gives Kelly no edge. Divergence still uses Kelly. */
+  readonly steamSizing?: SteamSizingConfig;
 };
 
 export type DecisionOutcome =
@@ -34,12 +38,15 @@ export const buildDecision = (
   input: BuildDecisionInput,
   config: DecisionConfig,
 ): Result<DecisionOutcome, QuantError> => {
-  const stakeResult = kellyStake(
-    input.signal.fairProb,
-    input.signal.offeredOddsMilli,
-    input.riskState.bankroll,
-    config.kelly,
-  );
+  const stakeResult =
+    input.signal.kind === 'steam' && config.steamSizing !== undefined
+      ? steamStake(input.signal.strength, input.riskState.bankroll, config.steamSizing)
+      : kellyStake(
+          input.signal.fairProb,
+          input.signal.offeredOddsMilli,
+          input.riskState.bankroll,
+          config.kelly,
+        );
   if (!stakeResult.ok) {
     return stakeResult;
   }

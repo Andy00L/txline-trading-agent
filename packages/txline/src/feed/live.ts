@@ -218,7 +218,7 @@ export class LiveSseFeed implements Feed {
       state.gaps += 1;
       return;
     }
-    if (!idempotency.acceptScore(parsed.value.fixtureId, parsed.value.seq)) {
+    if (!idempotency.acceptScore(parsed.value.FixtureId, parsed.value.Seq)) {
       return;
     }
     const mapped = mapScorePayload(parsed.value);
@@ -269,7 +269,7 @@ export class LiveSseFeed implements Feed {
       );
       if (scores.ok) {
         for (const raw of scores.value) {
-          if (!idempotency.acceptScore(raw.fixtureId, raw.seq)) {
+          if (!idempotency.acceptScore(raw.FixtureId, raw.Seq)) {
             continue;
           }
           const mapped = mapScorePayload(raw);

@@ -21,23 +21,12 @@ const validOdds = {
 };
 
 const validScores = {
-  fixtureId: 17588227,
-  gameState: 'F',
-  startTime: 1750000000000,
-  isTeam: true,
-  fixtureGroupId: 1,
-  competitionId: 12345,
-  countryId: 1,
-  sportId: 1,
-  participant1IsHome: true,
-  participant2Id: 222,
-  participant1Id: 111,
-  action: 'goal',
-  id: 9,
-  ts: 1750000300000,
-  connectionId: 42,
-  seq: 401,
-  stats: { '1': 2, '2': 1 },
+  FixtureId: 17588227,
+  GameState: 'F',
+  Participant1IsHome: true,
+  Ts: 1750000300000,
+  Seq: 401,
+  Stats: { '1': 2, '2': 1 },
 };
 
 const validFixture = {
@@ -116,16 +105,16 @@ describe('scoresPayloadSchema', () => {
     const result = parseWith(scoresPayloadSchema, validScores);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value.seq).toBe(401);
-      expect(result.value.participant1IsHome).toBe(true);
+      expect(result.value.Seq).toBe(401);
+      expect(result.value.Participant1IsHome).toBe(true);
     }
   });
 
   it('rejects a payload missing seq', () => {
-    const result = parseWith(scoresPayloadSchema, { ...validScores, seq: undefined });
+    const result = parseWith(scoresPayloadSchema, { ...validScores, Seq: undefined });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.field).toBe('seq');
+      expect(result.error.field).toBe('Seq');
     }
   });
 });

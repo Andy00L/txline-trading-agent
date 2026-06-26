@@ -13,8 +13,8 @@ const FULL_GAME_PARTICIPANT2_GOALS = 2;
  */
 export const mapScorePayload = (raw: ScoresPayload): Result<ScoreUpdate, MapError> => {
   const stats = new Map<number, number>();
-  if (raw.stats) {
-    for (const [rawKey, value] of Object.entries(raw.stats)) {
+  if (raw.Stats) {
+    for (const [rawKey, value] of Object.entries(raw.Stats)) {
       const numericKey = Number(rawKey);
       if (Number.isInteger(numericKey)) {
         stats.set(numericKey, value);
@@ -24,15 +24,15 @@ export const mapScorePayload = (raw: ScoresPayload): Result<ScoreUpdate, MapErro
 
   const participant1Goals = stats.get(FULL_GAME_PARTICIPANT1_GOALS) ?? null;
   const participant2Goals = stats.get(FULL_GAME_PARTICIPANT2_GOALS) ?? null;
-  const homeGoals = raw.participant1IsHome ? participant1Goals : participant2Goals;
-  const awayGoals = raw.participant1IsHome ? participant2Goals : participant1Goals;
+  const homeGoals = raw.Participant1IsHome ? participant1Goals : participant2Goals;
+  const awayGoals = raw.Participant1IsHome ? participant2Goals : participant1Goals;
 
   return ok({
-    fixtureId: raw.fixtureId,
-    seq: raw.seq,
-    tsMs: raw.ts,
-    gameState: raw.gameState,
-    participant1IsHome: raw.participant1IsHome,
+    fixtureId: raw.FixtureId,
+    seq: raw.Seq,
+    tsMs: raw.Ts,
+    gameState: raw.GameState ?? '',
+    participant1IsHome: raw.Participant1IsHome,
     homeGoals,
     awayGoals,
     stats,

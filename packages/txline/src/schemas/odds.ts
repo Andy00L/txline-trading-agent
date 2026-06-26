@@ -18,15 +18,17 @@ export const oddsPayloadSchema = z.object({
   // For the free World Cup tier this is the StablePrice de-margined consensus.
   SuperOddsType: z.string(),
   InRunning: z.boolean(),
-  GameState: z.string().optional(),
-  MarketParameters: z.string().optional(),
-  MarketPeriod: z.string().optional(),
-  // Outcome labels, parallel to Prices and Pct. Exact 1X2 labels confirmed at capture (O2).
-  PriceNames: z.array(z.string()).optional(),
+  // Nullish, not optional: live pre-match records send GameState: null (confirmed at
+  // capture 2026-06-26), which .optional() would reject and fail the whole interval.
+  GameState: z.string().nullish(),
+  MarketParameters: z.string().nullish(),
+  MarketPeriod: z.string().nullish(),
+  // Outcome labels, parallel to Prices and Pct. 1X2 labels are part1/draw/part2 (O2).
+  PriceNames: z.array(z.string()).nullish(),
   // Decimal odds multiplied by 1000 (O1). sourceRef: docs/research/M0-recon-findings.md.
-  Prices: z.array(z.number().int()).optional(),
+  Prices: z.array(z.number().int()).nullish(),
   // Implied probability as a percentage with three decimals, or "NA" for quarter handicaps.
-  Pct: z.array(z.string().regex(/^(NA|\d+\.\d{3})$/)).optional(),
+  Pct: z.array(z.string().regex(/^(NA|\d+\.\d{3})$/)).nullish(),
 });
 
 export type OddsPayload = z.infer<typeof oddsPayloadSchema>;

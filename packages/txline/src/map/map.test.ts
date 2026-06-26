@@ -8,9 +8,9 @@ const baseOdds: OddsPayload = {
   FixtureId: 17588227,
   MessageId: '1750000000000:0',
   Ts: 1750000000000,
-  Bookmaker: 'StablePrice',
+  Bookmaker: 'TXLineStablePriceDemargined',
   BookmakerId: 0,
-  SuperOddsType: 'StablePrice',
+  SuperOddsType: '1X2_PARTICIPANT_RESULT',
   InRunning: false,
   MarketPeriod: 'FT',
   MarketParameters: '',
@@ -20,23 +20,12 @@ const baseOdds: OddsPayload = {
 };
 
 const baseScore: ScoresPayload = {
-  fixtureId: 17588227,
-  gameState: 'F',
-  startTime: 1750000000000,
-  isTeam: true,
-  fixtureGroupId: 1,
-  competitionId: 12345,
-  countryId: 1,
-  sportId: 1,
-  participant1IsHome: true,
-  participant2Id: 222,
-  participant1Id: 111,
-  action: 'goal',
-  id: 9,
-  ts: 1750000300000,
-  connectionId: 42,
-  seq: 401,
-  stats: { '1': 2, '2': 1 },
+  FixtureId: 17588227,
+  GameState: 'F',
+  Participant1IsHome: true,
+  Ts: 1750000300000,
+  Seq: 401,
+  Stats: { '1': 2, '2': 1 },
 };
 
 const baseFixture: Fixture = {
@@ -60,13 +49,37 @@ describe('mapOddsPayload', () => {
     if (result.ok) {
       const update = result.value;
       expect(update.fixtureId).toBe(17588227);
-      expect(update.marketKey).toBe('17588227:StablePrice:FT:');
+      expect(update.marketKey).toBe('17588227:1X2_PARTICIPANT_RESULT:FT:');
       expect(update.lines).toHaveLength(3);
       expect(update.lines[0]?.outcome).toBe('home');
       expect(update.lines[0]?.decimalOddsMilli).toBe(2100);
       expect(update.lines[0]?.impliedPct).toBeCloseTo(0.47619, 6);
       expect(update.lines[1]?.outcome).toBe('draw');
       expect(update.lines[2]?.outcome).toBe('away');
+    }
+  });
+
+  it('maps the live part1/draw/part2 1X2 labels to home/draw/away', () => {
+    const result = mapOddsPayload({ ...baseOdds, PriceNames: ['part1', 'draw', 'part2'] });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.lines[0]?.outcome).toBe('home');
+      expect(result.value.lines[1]?.outcome).toBe('draw');
+      expect(result.value.lines[2]?.outcome).toBe('away');
+    }
+  });
+
+  it('leaves non-1X2 markets (handicap, over/under) as other so the 1X2 strategy ignores them', () => {
+    const result = mapOddsPayload({
+      ...baseOdds,
+      SuperOddsType: 'ASIANHANDICAP_PARTICIPANT_GOALS',
+      PriceNames: ['part1', 'part2'],
+      Prices: [2177, 1850],
+      Pct: ['NA', 'NA'],
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.lines.every((line) => line.outcome === 'other')).toBe(true);
     }
   });
 
@@ -105,7 +118,7 @@ describe('mapScorePayload', () => {
   });
 
   it('flips home and away goals when participant 1 is away', () => {
-    const result = mapScorePayload({ ...baseScore, participant1IsHome: false });
+    const result = mapScorePayload({ ...baseScore, Participant1IsHome: false });
     if (result.ok) {
       expect(result.value.homeGoals).toBe(1);
       expect(result.value.awayGoals).toBe(2);
@@ -113,7 +126,7 @@ describe('mapScorePayload', () => {
   });
 
   it('returns null goals when the goal stats are absent', () => {
-    const result = mapScorePayload({ ...baseScore, stats: {} });
+    const result = mapScorePayload({ ...baseScore, Stats: {} });
     if (result.ok) {
       expect(result.value.homeGoals).toBeNull();
       expect(result.value.awayGoals).toBeNull();
