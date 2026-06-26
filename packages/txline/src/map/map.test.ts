@@ -1,0 +1,134 @@
+import { describe, expect, it } from 'vitest';
+import type { Fixture } from '../schemas/fixtures.js';
+import type { OddsPayload } from '../schemas/odds.js';
+import type { ScoresPayload } from '../schemas/scores.js';
+import { mapFixturePayload, mapOddsPayload, mapScorePayload } from './index.js';
+
+const baseOdds: OddsPayload = {
+  FixtureId: 17588227,
+  MessageId: '1750000000000:0',
+  Ts: 1750000000000,
+  Bookmaker: 'StablePrice',
+  BookmakerId: 0,
+  SuperOddsType: 'StablePrice',
+  InRunning: false,
+  MarketPeriod: 'FT',
+  MarketParameters: '',
+  PriceNames: ['1', 'X', '2'],
+  Prices: [2100, 3400, 3600],
+  Pct: ['47.619', '29.412', '27.778'],
+};
+
+const baseScore: ScoresPayload = {
+  fixtureId: 17588227,
+  gameState: 'F',
+  startTime: 1750000000000,
+  isTeam: true,
+  fixtureGroupId: 1,
+  competitionId: 12345,
+  countryId: 1,
+  sportId: 1,
+  participant1IsHome: true,
+  participant2Id: 222,
+  participant1Id: 111,
+  action: 'goal',
+  id: 9,
+  ts: 1750000300000,
+  connectionId: 42,
+  seq: 401,
+  stats: { '1': 2, '2': 1 },
+};
+
+const baseFixture: Fixture = {
+  FixtureId: 17588227,
+  Ts: 1749900000000,
+  StartTime: 1750000000000,
+  Competition: 'World Cup > Group Stage',
+  CompetitionId: 12345,
+  FixtureGroupId: 1,
+  Participant1Id: 111,
+  Participant1: 'Mexico',
+  Participant2Id: 222,
+  Participant2: 'South Africa',
+  Participant1IsHome: true,
+};
+
+describe('mapOddsPayload', () => {
+  it('maps a 1X2 odds payload into lines and a market key', () => {
+    const result = mapOddsPayload(baseOdds);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const update = result.value;
+      expect(update.fixtureId).toBe(17588227);
+      expect(update.marketKey).toBe('17588227:StablePrice:FT:');
+      expect(update.lines).toHaveLength(3);
+      expect(update.lines[0]?.outcome).toBe('home');
+      expect(update.lines[0]?.decimalOddsMilli).toBe(2100);
+      expect(update.lines[0]?.impliedPct).toBeCloseTo(0.47619, 6);
+      expect(update.lines[1]?.outcome).toBe('draw');
+      expect(update.lines[2]?.outcome).toBe('away');
+    }
+  });
+
+  it('maps NA in Pct to a null implied probability', () => {
+    const result = mapOddsPayload({ ...baseOdds, Pct: ['NA', '29.412', '27.778'] });
+    if (result.ok) {
+      expect(result.value.lines[0]?.impliedPct).toBeNull();
+    }
+  });
+
+  it('errors on a price that is not valid decimal odds', () => {
+    const result = mapOddsPayload({ ...baseOdds, Prices: [1000, 3400, 3600] });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('invalid-odds');
+    }
+  });
+
+  it('errors when PriceNames and Prices lengths differ', () => {
+    const result = mapOddsPayload({ ...baseOdds, Prices: [2100, 3400] });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('odds-array-mismatch');
+    }
+  });
+});
+
+describe('mapScorePayload', () => {
+  it('derives home and away goals when participant 1 is home', () => {
+    const result = mapScorePayload(baseScore);
+    if (result.ok) {
+      expect(result.value.homeGoals).toBe(2);
+      expect(result.value.awayGoals).toBe(1);
+      expect(result.value.stats.get(1)).toBe(2);
+    }
+  });
+
+  it('flips home and away goals when participant 1 is away', () => {
+    const result = mapScorePayload({ ...baseScore, participant1IsHome: false });
+    if (result.ok) {
+      expect(result.value.homeGoals).toBe(1);
+      expect(result.value.awayGoals).toBe(2);
+    }
+  });
+
+  it('returns null goals when the goal stats are absent', () => {
+    const result = mapScorePayload({ ...baseScore, stats: {} });
+    if (result.ok) {
+      expect(result.value.homeGoals).toBeNull();
+      expect(result.value.awayGoals).toBeNull();
+    }
+  });
+});
+
+describe('mapFixturePayload', () => {
+  it('maps a fixture record', () => {
+    const result = mapFixturePayload(baseFixture);
+    if (result.ok) {
+      expect(result.value.participant1).toBe('Mexico');
+      expect(result.value.participant2).toBe('South Africa');
+      expect(result.value.startTimeMs).toBe(1750000000000);
+      expect(result.value.participant1IsHome).toBe(true);
+    }
+  });
+});

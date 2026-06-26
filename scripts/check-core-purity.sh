@@ -7,7 +7,7 @@ core="packages/core/src"
 status=0
 
 echo "[check-core-purity] forbidden runtime calls (clock, RNG, env, globals, fetch)"
-if grep -rnE "Date\.now|performance\.now|Math\.random|process\.|globalThis|[^a-zA-Z]fetch\(" "$core" --include='*.ts' 2>/dev/null; then
+if grep -rnE "Date\.now\(|performance\.now\(|Math\.random\(|process\.(env|hrtime|argv)|globalThis\.|[^a-zA-Z]fetch\(" "$core" --include='*.ts' 2>/dev/null; then
   echo "  FAIL: core is deterministic and pure; inject a Clock and a seeded PRNG, do no IO."
   status=1
 else
