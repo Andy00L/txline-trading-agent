@@ -1,0 +1,17 @@
+{
+  "name": "@txline-agent/devnet-tools",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Dev-only devnet runbook scripts (M4 commit + CPI-settle e2e). Not shipped.",
+  "scripts": {
+    "build": "tsc -b",
+    "lint": "eslint .",
+    "settle:e2e": "node --env-file=../../.env dist/settle-e2e.js"
+  },
+  "dependencies": {
+    "@txline-agent/core": "workspace:*",
+    "@txline-agent/onchain-client": "workspace:*",
+    "@txline-agent/txline": "workspace:*"
+  }
+}

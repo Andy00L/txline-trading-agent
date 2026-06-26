@@ -2,6 +2,10 @@ import { getAddressEncoder, getProgramDerivedAddress, type Address } from '@sola
 
 const addressEncoder = getAddressEncoder();
 
+/** The 32 raw bytes of an address, for embedding a pubkey in borsh (e.g. RevealArgs.strategy). */
+export const addressToBytes = (value: Address): Uint8Array =>
+  Uint8Array.from(addressEncoder.encode(value));
+
 const textSeed = (text: string): Uint8Array => new TextEncoder().encode(text);
 
 const u64Le = (value: bigint): Uint8Array => {

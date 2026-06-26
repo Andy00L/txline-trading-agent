@@ -53,6 +53,18 @@ importers:
         specifier: ^3.23.0
         version: 3.25.76
 
+  tools/devnet:
+    dependencies:
+      '@txline-agent/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@txline-agent/onchain-client':
+        specifier: workspace:*
+        version: link:../../packages/onchain-client
+      '@txline-agent/txline':
+        specifier: workspace:*
+        version: link:../../packages/txline
+
 packages:
 
   '@esbuild/aix-ppc64@0.21.5':

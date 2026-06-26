@@ -3,6 +3,7 @@ import { encodeRevealArgs, type EncodeError, type RevealArgs } from './borsh.js'
 import { BorshWriter } from './borsh-writer.js';
 import {
   COMMIT_DECISION_DISCRIMINATOR,
+  INITIALIZE_STRATEGY_DISCRIMINATOR,
   SETTLE_DECISION_DISCRIMINATOR,
   VOID_DECISION_DISCRIMINATOR,
 } from './discriminators.js';
@@ -13,6 +14,31 @@ const withDiscriminator = (discriminator: Uint8Array, body: Uint8Array): Uint8Ar
   out.set(discriminator, 0);
   out.set(body, discriminator.length);
   return out;
+};
+
+/**
+ * Instruction data for initialize_strategy: discriminator ++ strategy_id ++
+ * txline_program ++ starting_bankroll. The arg order mirrors the Rust handler
+ * signature (programs/agent_ledger/src/lib.rs initialize_strategy). txlineProgram
+ * is the pinned CPI target written verbatim as a 32-byte pubkey.
+ */
+export const encodeInitializeStrategyData = (input: {
+  readonly strategyId: bigint;
+  readonly txlineProgram: Uint8Array;
+  readonly startingBankroll: bigint;
+}): Result<Uint8Array, EncodeError> => {
+  if (input.txlineProgram.length !== 32) {
+    return err({
+      kind: 'bad-length',
+      field: 'txlineProgram',
+      detail: `expected 32 bytes, got ${input.txlineProgram.length}`,
+    });
+  }
+  const writer = new BorshWriter();
+  writer.u64(input.strategyId);
+  writer.bytes(input.txlineProgram);
+  writer.u64(input.startingBankroll);
+  return ok(withDiscriminator(INITIALIZE_STRATEGY_DISCRIMINATOR, writer.finish()));
 };
 
 /** Instruction data for commit_decision: discriminator ++ commit_hash ++ fixture_id ++ market. */
