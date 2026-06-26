@@ -1,0 +1,11 @@
+packages:
+  - "packages/*"
+  - "tools/*"
+
+allowBuilds:
+  esbuild: true
+
+# pnpm 11 reads build-script approvals here (moved out of package.json).
+# esbuild powers Vitest's TypeScript transform and needs its platform binary.
+onlyBuiltDependencies:
+  - esbuild

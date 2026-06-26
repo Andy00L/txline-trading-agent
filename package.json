@@ -1,0 +1,32 @@
+{
+  "name": "txline-trading-agent",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Autonomous TxLINE odds-trading agent with a trustless on-chain track record (TxODDS World Cup hackathon).",
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=11"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "typecheck": "tsc -b",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check:standards": "bash scripts/check-standards.sh",
+    "check:purity": "bash scripts/check-core-purity.sh",
+    "verify": "pnpm typecheck && pnpm test && pnpm lint && pnpm check:standards && pnpm check:purity"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "eslint": "^9.17.0",
+    "prettier": "^3.4.0",
+    "turbo": "^2.3.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.18.0",
+    "vitest": "^2.1.0"
+  }
+}

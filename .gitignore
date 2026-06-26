@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.turbo/
+*.tsbuildinfo
+coverage/
+
+# Secrets and local env (never commit real tokens or keypairs)
+.env
+.env.*
+!.env.example
+*.keypair.json
+wallet-*.json
+
+# Rust and Anchor (M4)
+target/
+.anchor/
+test-ledger/
+
+# Editor and OS
+.DS_Store
+*.log
