@@ -30,6 +30,15 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.20.0)
 
+  packages/backtest:
+    dependencies:
+      '@txline-agent/core':
+        specifier: workspace:*
+        version: link:../core
+      '@txline-agent/txline':
+        specifier: workspace:*
+        version: link:../txline
+
   packages/core: {}
 
   packages/onchain-client:

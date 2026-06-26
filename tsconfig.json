@@ -4,6 +4,7 @@
     { "path": "packages/core" },
     { "path": "packages/txline" },
     { "path": "packages/onchain-client" },
+    { "path": "packages/backtest" },
     { "path": "tools/devnet" }
   ]
 }
