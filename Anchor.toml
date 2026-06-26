@@ -1,0 +1,22 @@
+[toolchain]
+anchor_version = "0.31.1"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.devnet]
+agent_ledger = "FLZiKMUaPAGMtPLbfHvHwfiVfkTZD8RZ84CSrkDy1kLD"
+
+[programs.localnet]
+agent_ledger = "FLZiKMUaPAGMtPLbfHvHwfiVfkTZD8RZ84CSrkDy1kLD"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "devnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "echo 'program logic is unit-tested with cargo test; see programs/agent_ledger/src/logic.rs'"
