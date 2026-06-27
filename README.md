@@ -1,16 +1,17 @@
 # 🤖 TxLINE autonomous odds-trading agent
 
-![Tests](https://img.shields.io/badge/tests-250%20passing-1F8A5B) ![Solana](https://img.shields.io/badge/Solana-devnet-2B5FD9) ![Mode](https://img.shields.io/badge/mode-paper%20trading-6B7280) ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6) ![Anchor](https://img.shields.io/badge/Anchor-0.31-512BD4)
+![Tests](https://img.shields.io/badge/tests-285%20passing-1F8A5B) ![Solana](https://img.shields.io/badge/Solana-devnet-2B5FD9) ![Mode](https://img.shields.io/badge/mode-paper%20trading-6B7280) ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6) ![Anchor](https://img.shields.io/badge/Anchor-0.31-512BD4)
 
 ![TxLINE agent operator dashboard: live feed status, the ingest to settle pipeline, and the committed and settled position ledger with on-chain Verified on Solana stamps](docs/assets/dashboard.png)
 
 > The operator console: live feed status, the ingest-to-settle pipeline, and the position ledger with on-chain "Verified on Solana" stamps.
 
 An autonomous, deterministic agent that ingests the live TxLINE World Cup feed (odds and
-scores, Merkle-anchored on Solana), trades a consensus steam / divergence strategy, and keeps a
-**trustless, non-cherry-picked on-chain track record**: every decision is hashed on-chain before
-kickoff and settled by a CPI into TxLINE's own `txoracle::validate_stat`, so PnL is only writable
-when the oracle-attested score matches the sealed claim.
+scores, Merkle-anchored on Solana), trades a **cross-market relative-value strategy** across the
+full odds surface, and keeps a **trustless, non-cherry-picked on-chain track record**: every
+decision is hashed on-chain before kickoff and settled by a CPI into TxLINE's own
+`txoracle::validate_stat`, so PnL is only writable when the oracle-attested score matches the
+sealed claim.
 
 Submission for the TxODDS "Trading Tools and Agents" World Cup hackathon (Superteam Earn). Devnet
 and paper trading only; it places no real-money wagers.
@@ -21,23 +22,25 @@ Most entries print signals. The hard problem the sponsor named is that **matches
 deadline, so there is no live activity at judging time** and any claimed track record can be
 cherry-picked. This agent answers that with a verifiable chain rather than a screenshot:
 
-1. **Verified inputs.** Odds and scores are validated against TxLINE's on-chain Merkle roots.
-2. **Committed decisions.** Before kickoff the agent writes `keccak256(borsh(side, fair prob,
-   entry odds, stake, signal, nonce))` on-chain. Decisions cannot be backfilled or altered.
-3. **Verified outcomes.** At settle, a CPI into `txoracle::validate_stat` proves the final score
-   satisfies the sealed claim; the program writes PnL only if the proof passes. A bad proof, a
-   wrong fixture, or a tampered stat reverts the whole settle.
+1. **Committed decisions.** Before kickoff the agent writes `keccak256(borsh(side, fair prob,
+   entry odds, stake, signal, nonce))` on-chain. Side, price, and stake are sealed, so a decision
+   cannot be backfilled or altered after the outcome is known.
+2. **Oracle-verified outcomes.** At settle, a CPI into `txoracle::validate_stat` proves the final
+   score satisfies the sealed claim against TxLINE's own on-chain Merkle root; the program writes
+   PnL only if the proof passes. A bad proof, a wrong fixture, or a tampered stat reverts the whole
+   settle. Every settled result is therefore proven, not asserted.
 
-![Trust chain: ingest the live feed, verify inputs against the on-chain Merkle roots, commit a keccak hash before kickoff, settle by CPI into the TxLINE oracle, and write PnL only when the proof passes](docs/assets/trust-chain.svg)
+![Trust chain: commit a keccak hash of the sealed decision before kickoff, then at settle prove the final score against the TxLINE oracle's on-chain Merkle root by CPI, and write PnL only when the proof passes](docs/assets/trust-chain.svg)
 
 The same code path runs live and in replay, so the walk-forward backtest is direct evidence about
 live behaviour, not a separate script.
 
 ## 📊 Status
 
-M0-M9 complete, followed by a full review-and-harden pass. **240 TypeScript tests + 10 Rust tests
-(250 total), all green**, with `typecheck`, `lint`, a coding-standards gate, and a core-purity gate
-all passing. The `agent_ledger` program is deployed and the full trust chain is proven on devnet
+M0-M9 complete, followed by a review-and-harden pass and a cross-market strategy upgrade (a
+goals-model relative-value signal across the full odds surface, replacing steam-following).
+**275 TypeScript tests + 10 Rust tests (285 total), all green**, with `typecheck`, `lint`, a
+coding-standards gate, and a core-purity gate all passing. The `agent_ledger` program is deployed and the full trust chain is proven on devnet
 (commit before reveal, CPI-settle, and three rejection cases: tampered root, mismatched fixture,
 swapped stats). A security audit ([docs/audit/M8-audit.md](docs/audit/M8-audit.md)) closed two
 critical settlement trust gaps, which are fixed, deployed, and re-proven on-chain; the later
@@ -59,7 +62,7 @@ enforced by ESLint and a CI grep: `core` depends on nothing and does no IO.
 ![Architecture: dashboard reads the api, the api projects agent state, the agent drives runPipeline over txline and onchain-client on top of a pure core, the Anchor agent_ledger program is the on-chain settle target, and the replay backtest shares the same code path](docs/assets/architecture.svg)
 
 ```
-core           pure quant + domain + decision logic (de-vig, Kelly, steam, CLV, calibration)
+core           pure quant + domain + decision logic (cross-market goals model, de-vig, Kelly, CLV + bootstrap CI, calibration)
 txline         TxLINE REST + SSE client, zod schemas, LiveSseFeed + ReplayFeed, resilience
 onchain-client @solana/kit client: commit/settle, the validate_stat CPI args, account decoders
 agent          composition root: LiveSseFeed -> runPipeline -> an on-chain sink; state store
@@ -81,13 +84,16 @@ and [docs/runbooks/M4-devnet.md](docs/runbooks/M4-devnet.md).
 
 ```bash
 pnpm install
-pnpm verify            # typecheck + 240 tests + lint + standards + core-purity, all green
+pnpm verify            # typecheck + 275 tests + lint + standards + core-purity, all green
 ```
 
-Run the backtest on a captured World Cup window (the proof centerpiece; needs the TxLINE token):
+Run the backtest (the proof centerpiece; needs the TxLINE token). `backtest:sweep` aggregates the
+group stage into one Closing-Line-Value report with a bootstrap confidence interval; `backtest:run`
+replays a single window. Both write `backtest/out/report.{md,html}`:
 
 ```bash
-pnpm --filter @txline-agent/devnet-tools backtest:run   # writes backtest/out/report.{md,html}
+pnpm --filter @txline-agent/devnet-tools backtest:sweep   # group-stage CLV report (with CI)
+pnpm --filter @txline-agent/devnet-tools backtest:run     # single window
 ```
 
 Run the headless agent plus the operator dashboard:
@@ -117,16 +123,24 @@ pnpm --filter @txline-agent/devnet-tools settle:e2e
 ## 📈 The strategy
 
 TxLINE serves a single de-margined consensus price (`TXLineStablePriceDemargined`, booksum ~ 1),
-so a naive Kelly +EV bet sizes to zero: the tradeable edge is **Closing Line Value**, beating the
-consensus close. The agent sizes steam signals (sharp, sustained consensus moves) by move
-strength, and reports CLV, calibration (Brier, log loss), hit rate, and drawdown over a
-walk-forward split. The strategy is deterministic and the math is in `core` with golden tests.
+so a naive Kelly +EV bet sizes to zero and a de-margined consensus cannot be out-forecast. The
+agent instead trades **cross-market relative value**: for each fixture it fits one Dixon-Coles
+goals model (parametrized by supremacy and total goals) jointly to the full surface the feed
+serves (1X2 + the Over/Under total-goals ladder + the Asian-Handicap ladder), then backs the 1X2
+leg the joint fit prices longer than the 1X2 line implies (the lagging leg, after Kaunitz et al.
+2017), sized by a real positive Kelly edge and entered in the liquid near-kickoff window. It
+reports Closing Line Value with a bootstrap confidence interval, calibration (Brier, log loss),
+hit rate, and drawdown over a walk-forward split. The math is pure and deterministic, in `core`
+with golden tests.
 
-Honest result from one captured window (epoch day 20629, hours 17-23): 8 settled bets, 3W/5L,
-ROI +27.82% but variance-driven by long-odds upsets, mean CLV -0.0424. The deliverable is the
-**methodology and the verifiable harness**, not a cherry-picked number; a single window does not
-establish an edge, and the report says so (Closing Line Value is reported only over bets that had
-a known closing line).
+The honest framing: the edge is cross-market consistency and slow-leg timing, not beating an
+efficient market. Over the World Cup group stage (10 match-days, 22 settled bets), the mean Closing
+Line Value is **+0.0024 (95% bootstrap CI [-0.0007, +0.0057]), with 59% of bets beating the
+pre-kickoff close**, against the prior steam strategy's -0.0424 on 8 bets (12.5% positive). The
+point estimate is positive and a majority of bets beat the close; the interval narrowly includes
+zero, so this is a small, honestly-bounded edge, not a proven one. Closing Line Value (not the
+variance-driven +41% ROI over 22 long-odds-leaning bets) is the leading indicator a desk tracks,
+and it is reported only over bets that had a known pre-kickoff closing line.
 
 ## 🔗 On-chain program
 

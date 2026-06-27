@@ -1,9 +1,9 @@
 import { buildDecision, type DecisionConfig } from '../decision/build.js';
 import type { Decision } from '../domain/decision.js';
-import type { DevigMethod } from '../domain/fairbook.js';
+import type { DevigMethod, FairBook } from '../domain/fairbook.js';
 import { fairProbOf } from '../domain/fairbook.js';
 import type { OddsUpdate, ScoreUpdate } from '../domain/events.js';
-import { OUTCOMES_1X2, type MarketKey, type Outcome } from '../domain/market.js';
+import { OUTCOMES_1X2, type MarketKey, type OddsLine, type Outcome } from '../domain/market.js';
 import { isFinalGameState } from '../domain/score-state.js';
 import type { Feed, FeedEnvelope } from '../feed.js';
 import { computeFairBook } from '../quant/devig.js';
@@ -17,6 +17,11 @@ import {
   type ProbObservation,
   type SteamConfig,
 } from '../signal/detect.js';
+import {
+  detectCrossMarketValue,
+  type CrossMarketConfig,
+  type OverUnderMarket,
+} from '../signal/cross-market.js';
 import type { DecimalOddsMilli, MicroUsd, Prob } from '../units.js';
 import type { CommittedPosition, PipelineSink, SettledPosition } from './sink.js';
 
@@ -28,6 +33,10 @@ export type PipelineConfig = {
   readonly startingBankroll: MicroUsd;
   /** Cap on the per-outcome fair-probability history kept for steam detection. */
   readonly steamHistoryLimit: number;
+  /** When set, the pipeline runs the cross-market relative-value strategy (one decision per
+   * fixture, sized by the goals-model edge) instead of the per-market steam/divergence path.
+   * sourceRef: docs/research/quant-methods.md (cross-market relative value). */
+  readonly crossMarket?: CrossMarketConfig;
 };
 
 export type PipelineResult = {
@@ -42,6 +51,15 @@ type MarketState = {
   readonly history: Map<Outcome, ProbObservation[]>;
   readonly lastFairProb: Map<Outcome, Prob>;
   readonly lastOdds: Map<Outcome, DecimalOddsMilli>;
+};
+
+/** The latest full-game odds surface for one fixture: the 1X2 lines plus the Over/Under
+ * markets keyed by total-goals line, joined for the cross-market goals-model fit. */
+type FixtureSurface = {
+  match: { readonly lines: readonly OddsLine[]; readonly marketKey: MarketKey; readonly tsMs: number } | null;
+  readonly overUnder: Map<number, readonly OddsLine[]>;
+  /** Feed timestamp of the last cross-market fit for this fixture, for refit throttling. */
+  lastFitMs: number | null;
 };
 
 type ScoreState = {
@@ -59,9 +77,17 @@ type OpenPosition = { readonly index: number; readonly decision: Decision; reado
 type PipelineState = {
   riskState: RiskState;
   readonly markets: Map<MarketKey, MarketState>;
+  /** Per-fixture joined surface for the cross-market strategy. */
+  readonly surfaces: Map<number, FixtureSurface>;
+  /** Scheduled kickoff (ms) per fixture, read from the scores channel; gates cross-market entry
+   * to the near-kickoff window. */
+  readonly fixtureStartMs: Map<number, number>;
   readonly scores: Map<number, ScoreState>;
   readonly open: OpenPosition[];
   readonly actedMarkets: Set<MarketKey>;
+  /** Fixtures already acted on by the cross-market path, so at most one decision is taken
+   * per fixture even as its surface keeps updating. */
+  readonly actedFixtures: Set<number>;
   /** Indices already settled, so the final-whistle path and the end-of-feed sweep never
    * settle the same position twice. */
   readonly settled: Set<number>;
@@ -90,6 +116,67 @@ const getOrCreateMarket = (
   return created;
 };
 
+const oddsByOutcomeOf = (lines: readonly OddsLine[]): Map<Outcome, DecimalOddsMilli> => {
+  const oddsByOutcome = new Map<Outcome, DecimalOddsMilli>();
+  for (const line of lines) {
+    oddsByOutcome.set(line.outcome, line.decimalOddsMilli);
+  }
+  return oddsByOutcome;
+};
+
+/**
+ * Record one fair-book observation into a market's per-outcome state: the latest fair
+ * probability and offered odds, and the bounded fair-probability history that steam
+ * detection and Closing Line Value read. Shared by the steam and cross-market paths.
+ */
+const recordMarketObservation = (
+  market: MarketState,
+  fairBook: FairBook,
+  oddsByOutcome: ReadonlyMap<Outcome, DecimalOddsMilli>,
+  tsMs: number,
+  historyLimit: number,
+): void => {
+  for (const outcome of OUTCOMES_1X2) {
+    const fairProb = fairProbOf(fairBook, outcome);
+    if (fairProb === null) {
+      continue;
+    }
+    market.lastFairProb.set(outcome, fairProb);
+    const offered = oddsByOutcome.get(outcome);
+    if (offered !== undefined) {
+      market.lastOdds.set(outcome, offered);
+    }
+    const history = market.history.get(outcome) ?? [];
+    history.push({ tsMs, fairProb });
+    while (history.length > historyLimit) {
+      history.shift();
+    }
+    market.history.set(outcome, history);
+  }
+};
+
+/**
+ * Commit one decision: assign the next monotonic index, fold it into the risk state and the
+ * open set, advance the counter, and emit it to the sink. Shared by every signal path.
+ */
+const commitDecision = async (
+  state: PipelineState,
+  decision: Decision,
+  nowMs: number,
+  sink: PipelineSink,
+): Promise<void> => {
+  const index = state.decisionsCount;
+  state.riskState = onCommit(state.riskState, {
+    stake: decision.stake,
+    fixtureId: decision.fixtureId,
+    marketKey: decision.marketKey,
+  });
+  state.open.push({ index, decision, committedAtMs: nowMs });
+  state.decisionsCount += 1;
+  const committed: CommittedPosition = { index, decision, committedAtMs: nowMs };
+  await sink.onCommit(committed);
+};
+
 /**
  * Fold one odds update into the per-market state and, if a steam or divergence signal
  * clears the risk manager, commit one decision for that market. At most one decision is
@@ -110,29 +197,8 @@ const handleOdds = async (
   }
   const fairBook = fairBookResult.value;
   const market = getOrCreateMarket(state, odds.marketKey, odds.fixtureId);
-
-  const oddsByOutcome = new Map<Outcome, DecimalOddsMilli>();
-  for (const line of odds.lines) {
-    oddsByOutcome.set(line.outcome, line.decimalOddsMilli);
-  }
-
-  for (const outcome of OUTCOMES_1X2) {
-    const fairProb = fairProbOf(fairBook, outcome);
-    if (fairProb === null) {
-      continue;
-    }
-    market.lastFairProb.set(outcome, fairProb);
-    const offered = oddsByOutcome.get(outcome);
-    if (offered !== undefined) {
-      market.lastOdds.set(outcome, offered);
-    }
-    const history = market.history.get(outcome) ?? [];
-    history.push({ tsMs: odds.tsMs, fairProb });
-    while (history.length > config.steamHistoryLimit) {
-      history.shift();
-    }
-    market.history.set(outcome, history);
-  }
+  const oddsByOutcome = oddsByOutcomeOf(odds.lines);
+  recordMarketObservation(market, fairBook, oddsByOutcome, odds.tsMs, config.steamHistoryLimit);
 
   if (state.actedMarkets.has(odds.marketKey)) {
     return 0;
@@ -188,20 +254,129 @@ const handleOdds = async (
       continue;
     }
     const decision = built.value.decision;
-    const index = state.decisionsCount;
-    state.riskState = onCommit(state.riskState, {
-      stake: decision.stake,
-      fixtureId: decision.fixtureId,
-      marketKey: decision.marketKey,
-    });
-    state.open.push({ index, decision, committedAtMs: nowMs });
     state.actedMarkets.add(odds.marketKey);
-    state.decisionsCount += 1;
-    const committed: CommittedPosition = { index, decision, committedAtMs: nowMs };
-    await sink.onCommit(committed);
+    await commitDecision(state, decision, nowMs, sink);
     return 1;
   }
   return 0;
+};
+
+/**
+ * Fold one full-game odds update into the fixture's joined surface (1X2 + Over/Under), and
+ * if the cross-market goals model finds a 1X2 leg priced longer than the joint fit implies
+ * and it clears the risk manager, commit one decision. At most one decision is taken per
+ * fixture (actedFixtures). First-half markets are ignored, so a bet is never settled against
+ * the wrong score. Returns the number of decisions committed (0 or 1).
+ */
+const handleCrossMarketOdds = async (
+  state: PipelineState,
+  envelope: FeedEnvelope<OddsUpdate>,
+  config: PipelineConfig,
+  crossConfig: CrossMarketConfig,
+  sink: PipelineSink,
+): Promise<number> => {
+  const odds = envelope.payload;
+  const nowMs = envelope.receivedAtMs;
+  // Full-game markets only: a first-half (half=1) market settles on a different score, so it
+  // must never be traded against the full-time result. sourceRef: market-taxonomy probe 2026-06-27.
+  if (odds.period !== 'full-game') {
+    return 0;
+  }
+
+  const surface = state.surfaces.get(odds.fixtureId) ?? {
+    match: null,
+    overUnder: new Map(),
+    lastFitMs: null,
+  };
+  state.surfaces.set(odds.fixtureId, surface);
+  if (odds.marketKind === '1x2') {
+    surface.match = { lines: odds.lines, marketKey: odds.marketKey, tsMs: odds.tsMs };
+    // Record the de-vigged 1X2 consensus history so Closing Line Value reads the market line (not
+    // the model fair) at entry and at close, but only PRE-KICKOFF (inRunning false): an in-play
+    // price (the draw prob collapses after a goal) is not part of the closing line, and the flood
+    // of in-play updates would evict the pre-match closing observation under the history cap.
+    // sourceRef: docs/research/quant-methods.md item 6.
+    if (!odds.inRunning) {
+      const fairBook = computeFairBook(odds.lines, crossConfig.devigMethod);
+      if (fairBook.ok) {
+        const market = getOrCreateMarket(state, odds.marketKey, odds.fixtureId);
+        recordMarketObservation(
+          market,
+          fairBook.value,
+          oddsByOutcomeOf(odds.lines),
+          odds.tsMs,
+          config.steamHistoryLimit,
+        );
+      }
+    }
+  } else if (odds.marketKind === 'over-under' && odds.line !== null) {
+    surface.overUnder.set(odds.line, odds.lines);
+  } else {
+    return 0;
+  }
+
+  if (state.actedFixtures.has(odds.fixtureId)) {
+    return 0;
+  }
+  const matchState = surface.match;
+  if (matchState === null || surface.overUnder.size === 0) {
+    return 0;
+  }
+  // Time-to-kickoff gate: trade only the liquid near-kickoff window, and only once kickoff is
+  // known from the scores channel (which excludes far-future fixtures whose scores have not yet
+  // started, the source of thin-market false signals). sourceRef: R2 (condition on time-to-kickoff).
+  const startMs = state.fixtureStartMs.get(odds.fixtureId);
+  if (startMs === undefined) {
+    return 0;
+  }
+  const leadMs = startMs - nowMs;
+  if (leadMs < crossConfig.minLeadMs || leadMs > crossConfig.maxLeadMs) {
+    return 0;
+  }
+  // Throttle the goals-model fit (the per-update cost): skip if the configured gap has not
+  // elapsed since the last fit for this fixture. The mispricing persists across updates, so this
+  // only spaces re-evaluation; it does not change which signal is found.
+  if (
+    crossConfig.minRefitMs > 0 &&
+    surface.lastFitMs !== null &&
+    odds.tsMs - surface.lastFitMs < crossConfig.minRefitMs
+  ) {
+    return 0;
+  }
+  surface.lastFitMs = odds.tsMs;
+  const overUnder: OverUnderMarket[] = [...surface.overUnder.entries()].map(([line, lines]) => ({
+    line,
+    lines,
+  }));
+  const signalResult = detectCrossMarketValue(
+    {
+      fixtureId: odds.fixtureId,
+      marketKey: matchState.marketKey,
+      tsMs: odds.tsMs,
+      matchLines: matchState.lines,
+      overUnder,
+    },
+    crossConfig,
+  );
+  if (!signalResult.ok || signalResult.value === null) {
+    return 0;
+  }
+  const built = buildDecision(
+    {
+      signal: signalResult.value,
+      riskState: state.riskState,
+      riskContext: { consensusFairProb: signalResult.value.fairProb, dispersion: 0 },
+      nowMs,
+      feedTsMs: odds.tsMs,
+    },
+    config.decision,
+  );
+  if (!built.ok || built.value.kind !== 'decision') {
+    return 0;
+  }
+  state.actedFixtures.add(odds.fixtureId);
+  await commitDecision(state, built.value.decision, nowMs, sink);
+  return 1;
 };
 
 /**
@@ -228,6 +403,11 @@ const shouldReplaceScore = (existing: ScoreState, incoming: ScoreUpdate): boolea
  * true final one.
  */
 const handleScore = (state: PipelineState, score: ScoreUpdate): void => {
+  // Record the scheduled kickoff from every record, including pre-match "scheduled" ones that
+  // carry no goals, so the cross-market entry gate knows time-to-kickoff before the match starts.
+  if (score.startTimeMs !== null) {
+    state.fixtureStartMs.set(score.fixtureId, score.startTimeMs);
+  }
   if (score.homeGoals === null || score.awayGoals === null) {
     return;
   }
@@ -268,24 +448,39 @@ const settlePosition = async (
     fixtureId: position.decision.fixtureId,
     marketKey: position.decision.marketKey,
   });
-  // Closing line value uses the most recent consensus fair probability BY TIMESTAMP for the
-  // backed outcome (robust to out-of-order arrival). When no observation arrived after the
-  // entry, the closing line is unknown: fall back to the entry prob and flag it not-known,
-  // so the backtest can exclude it from CLV rather than count a false zero.
+  // Closing Line Value compares the market (de-vigged 1X2 consensus) line for the backed outcome
+  // at entry against the CLOSING line, both BY TIMESTAMP (robust to out-of-order arrival). The
+  // entry consensus is the latest observation at or before entry; the close is the latest
+  // observation that is after entry but still BEFORE kickoff, because an in-play price (after a
+  // goal the draw prob collapses) is not a closing line. When kickoff is unknown the close falls
+  // back to the last observation after entry. When no such observation exists the closing line is
+  // unknown: fall back to the entry consensus and flag it not-known, so the backtest excludes it
+  // from CLV rather than counting a false zero. sourceRef: docs/research/quant-methods.md item 6.
+  const startMs = state.fixtureStartMs.get(position.decision.fixtureId);
   const outcomeHistory =
     state.markets.get(position.decision.marketKey)?.history.get(position.decision.outcome) ?? [];
-  let latestObservation: ProbObservation | undefined;
+  let entryObservation: ProbObservation | undefined;
+  let closingObservation: ProbObservation | undefined;
   for (const observation of outcomeHistory) {
-    if (latestObservation === undefined || observation.tsMs > latestObservation.tsMs) {
-      latestObservation = observation;
+    if (
+      observation.tsMs <= position.decision.tsMs &&
+      (entryObservation === undefined || observation.tsMs > entryObservation.tsMs)
+    ) {
+      entryObservation = observation;
+    }
+    const beforeKickoff = startMs === undefined || observation.tsMs < startMs;
+    if (
+      observation.tsMs > position.decision.tsMs &&
+      beforeKickoff &&
+      (closingObservation === undefined || observation.tsMs > closingObservation.tsMs)
+    ) {
+      closingObservation = observation;
     }
   }
-  const hasClosingLine =
-    latestObservation !== undefined && latestObservation.tsMs > position.decision.tsMs;
+  const entryConsensusProb = entryObservation?.fairProb ?? position.decision.fairProb;
+  const hasClosingLine = closingObservation !== undefined;
   const closingFairProb =
-    hasClosingLine && latestObservation !== undefined
-      ? latestObservation.fairProb
-      : position.decision.fairProb;
+    closingObservation !== undefined ? closingObservation.fairProb : entryConsensusProb;
   state.settled.add(position.index);
   const settledPosition: SettledPosition = {
     index: position.index,
@@ -295,6 +490,7 @@ const settlePosition = async (
     pnl,
     settledAtMs: score.tsMs,
     settledSeq: score.seq,
+    entryConsensusProb,
     closingFairProb,
     closingFairProbKnown: hasClosingLine,
   };
@@ -358,9 +554,12 @@ export const runPipeline = async (
   const state: PipelineState = {
     riskState: createRiskState(config.startingBankroll),
     markets: new Map(),
+    surfaces: new Map(),
+    fixtureStartMs: new Map(),
     scores: new Map(),
     open: [],
     actedMarkets: new Set(),
+    actedFixtures: new Set(),
     settled: new Set(),
     decisionsCount: 0,
   };
@@ -369,7 +568,10 @@ export const runPipeline = async (
   for await (const event of feed.events()) {
     eventsProcessed += 1;
     if (event.kind === 'odds') {
-      committed += await handleOdds(state, event.envelope, config, sink);
+      committed +=
+        config.crossMarket !== undefined
+          ? await handleCrossMarketOdds(state, event.envelope, config, config.crossMarket, sink)
+          : await handleOdds(state, event.envelope, config, sink);
     } else if (event.kind === 'score') {
       const score = event.envelope.payload;
       handleScore(state, score);

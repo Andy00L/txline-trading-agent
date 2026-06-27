@@ -8,7 +8,8 @@
     "build": "tsc -b",
     "lint": "eslint .",
     "settle:e2e": "node --env-file=../../.env dist/settle-e2e.js",
-    "backtest:run": "node --env-file=../../.env dist/backtest-run.js"
+    "backtest:run": "node --max-old-space-size=7168 --env-file=../../.env dist/backtest-run.js",
+    "backtest:sweep": "node --max-old-space-size=7168 --env-file=../../.env dist/backtest-sweep.js"
   },
   "dependencies": {
     "@txline-agent/backtest": "workspace:*",

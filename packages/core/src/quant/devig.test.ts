@@ -8,7 +8,7 @@ const line = (outcome: Outcome, milli: number): OddsLine => {
   if (!odds.ok) {
     throw new Error(`bad odds milli ${milli}`);
   }
-  return { outcome, decimalOddsMilli: odds.value, impliedPct: null };
+  return { outcome, label: outcome, decimalOddsMilli: odds.value, impliedPct: null };
 };
 
 const sumFair = (book: { outcomes: readonly { fairProb: number }[] }): number =>

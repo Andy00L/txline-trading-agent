@@ -9,8 +9,8 @@ screen; `[SAY]` is the narration. Keep narration at a calm pace; the script is s
 - `.env` configured (TxLINE token + devnet wallet); `pnpm install && pnpm build` done.
 - The seeded or live dashboard running at `http://localhost:5173` with a few committed and one
   settled position visible (run the agent during a window, or use the API with recorded state).
-- Backtest report generated: `pnpm --filter @txline-agent/devnet-tools backtest:run`, open
-  `backtest/out/report.html`.
+- Group-stage backtest report generated: `pnpm --filter @txline-agent/devnet-tools backtest:sweep`
+  (or `backtest:run` for a single window), open `backtest/out/report.html`.
 - Solana Explorer (devnet) open on the program:
   `https://explorer.solana.com/address/FLZiKMUaPAGMtPLbfHvHwfiVfkTZD8RZ84CSrkDy1kLD?cluster=devnet`,
   with one `DecisionSettled` transaction open in another tab (expand the inner instructions to
@@ -31,10 +31,12 @@ into TxLINE's own oracle."
 [SHOW] The dashboard: the feed-status pill `connected`, the events counter rising, the
 ingest-to-settle pipeline lighting up.
 [SAY] "The agent opens the TxLINE odds and scores SSE streams and ingests them live. On a cold
-start it pulls a couple of hundred events in seconds. Each odds and score payload is validated
-against TxLINE's on-chain Merkle root before it can influence a trade. The strategy is consensus
-steam and divergence on the 1X2 full-time market. TxLINE serves a de-margined consensus price, so
-the edge is not vig, it is Closing Line Value, beating the close."
+start it pulls a couple of hundred events in seconds. The strategy is cross-market relative value:
+TxLINE serves a full surface per fixture, the 1X2 market plus an Over/Under total-goals ladder plus
+an Asian-Handicap ladder, and the agent fits one goals model to all of them at once. It backs the
+1X2 leg the joint fit prices longer than the 1X2 line implies, the lagging market that has not
+caught up yet. TxLINE serves a de-margined consensus, so the edge is not vig, it is Closing Line
+Value, getting on before the line moves to the close."
 
 ## 1:15 to 2:15  Commit before kickoff
 
@@ -71,17 +73,19 @@ record is only what the oracle attests."
 [SHOW] `backtest/out/report.html`: the equity curve, the Closing Line Value, the calibration
 diagram.
 [SAY] "The same decision code that runs live also runs the backtest, so a green backtest is
-evidence about live behaviour, not a separate simulation. The report measures Closing Line Value,
-calibration, hit rate, and drawdown over a walk-forward split. I am reporting it honestly: a
-single window is variance-driven and does not establish an edge, and the report says so. The
-deliverable is the verifiable methodology, not a cherry-picked number."
+evidence about live behaviour, not a separate simulation. The report measures Closing Line Value
+with a bootstrap confidence interval, plus calibration, hit rate, and drawdown, aggregated across
+the group stage. I am reporting it honestly: the edge is cross-market timing on a de-margined
+consensus, the test is whether the line moves to my entry by the pre-kickoff close, and I show the
+interval rather than a single cherry-picked number. The deliverable is the verifiable methodology
+and the trustless record."
 
 ## 4:35 to 5:00  Close
 
 [SHOW] The architecture diagram or the repo README.
 [SAY] "Under the hood: a pure deterministic quant core, a resilient TxLINE client, an Anchor
 program for commit and settle, a headless agent with a read-only API, and this dashboard. Strict
-typing, errors as values, money as integers, 205 tests, and a security audit. Devnet and paper
+typing, errors as values, money as integers, 285 tests, and a security audit. Devnet and paper
 trading only. Everything is open source. Thanks for watching."
 
 ## Notes for editing

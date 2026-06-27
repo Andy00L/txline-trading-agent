@@ -12,7 +12,9 @@ const baseOdds: OddsPayload = {
   BookmakerId: 0,
   SuperOddsType: '1X2_PARTICIPANT_RESULT',
   InRunning: false,
-  MarketPeriod: 'FT',
+  // Full-game markets carry a null MarketPeriod on the live feed (first-half is "half=1").
+  // sourceRef: market-taxonomy probe 2026-06-27.
+  MarketPeriod: null,
   MarketParameters: '',
   PriceNames: ['1', 'X', '2'],
   Prices: [2100, 3400, 3600],
@@ -49,9 +51,13 @@ describe('mapOddsPayload', () => {
     if (result.ok) {
       const update = result.value;
       expect(update.fixtureId).toBe(17588227);
-      expect(update.marketKey).toBe('17588227:1X2_PARTICIPANT_RESULT:FT:');
+      expect(update.marketKey).toBe('17588227:1X2_PARTICIPANT_RESULT::');
+      expect(update.marketKind).toBe('1x2');
+      expect(update.line).toBeNull();
+      expect(update.period).toBe('full-game');
       expect(update.lines).toHaveLength(3);
       expect(update.lines[0]?.outcome).toBe('home');
+      expect(update.lines[0]?.label).toBe('1');
       expect(update.lines[0]?.decimalOddsMilli).toBe(2100);
       expect(update.lines[0]?.impliedPct).toBeCloseTo(0.47619, 6);
       expect(update.lines[1]?.outcome).toBe('draw');
@@ -69,17 +75,42 @@ describe('mapOddsPayload', () => {
     }
   });
 
-  it('leaves non-1X2 markets (handicap, over/under) as other so the 1X2 strategy ignores them', () => {
+  it('classifies an Asian-handicap market with its line and keeps the 1X2 outcomes as other', () => {
     const result = mapOddsPayload({
       ...baseOdds,
       SuperOddsType: 'ASIANHANDICAP_PARTICIPANT_GOALS',
+      MarketParameters: 'line=0.5',
       PriceNames: ['part1', 'part2'],
       Prices: [2177, 1850],
       Pct: ['NA', 'NA'],
     });
     expect(result.ok).toBe(true);
     if (result.ok) {
+      expect(result.value.marketKind).toBe('asian-handicap');
+      expect(result.value.line).toBe(0.5);
+      // The 1X2 outcome mapping does not apply, but the raw side labels are preserved so the
+      // cross-market model can place each handicap line.
       expect(result.value.lines.every((line) => line.outcome === 'other')).toBe(true);
+      expect(result.value.lines[0]?.label).toBe('part1');
+      expect(result.value.lines[1]?.label).toBe('part2');
+    }
+  });
+
+  it('classifies an Over/Under market with its total-goals line and over/under labels', () => {
+    const result = mapOddsPayload({
+      ...baseOdds,
+      SuperOddsType: 'OVERUNDER_PARTICIPANT_GOALS',
+      MarketParameters: 'line=2.5',
+      PriceNames: ['over', 'under'],
+      Prices: [1833, 2200],
+      Pct: ['NA', 'NA'],
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.marketKind).toBe('over-under');
+      expect(result.value.line).toBe(2.5);
+      expect(result.value.lines[0]?.label).toBe('over');
+      expect(result.value.lines[1]?.label).toBe('under');
     }
   });
 
@@ -145,6 +176,29 @@ describe('mapScorePayload', () => {
       expect(result.value.stats.get(1000)).toBeUndefined();
       expect(result.value.stats.get(1)).toBe(2);
       expect(result.value.stats.get(2)).toBe(1);
+    }
+  });
+
+  it('derives the final game state from StatusId when GameState is frozen at scheduled (C9)', () => {
+    // The /updates replay feed freezes GameState at "scheduled" and signals the final whistle
+    // only through StatusId 5; settlement must read the phase from StatusId.
+    const result = mapScorePayload({ ...baseScore, GameState: 'scheduled', StatusId: 5 });
+    if (result.ok) {
+      expect(result.value.gameState).toBe('F');
+    }
+  });
+
+  it('maps an in-running StatusId to a non-final phase so a bet is not settled early', () => {
+    const result = mapScorePayload({ ...baseScore, GameState: 'scheduled', StatusId: 4 });
+    if (result.ok) {
+      expect(result.value.gameState).toBe('H2');
+    }
+  });
+
+  it('carries the scheduled kickoff through to startTimeMs', () => {
+    const result = mapScorePayload({ ...baseScore, StartTime: 1782417600000 });
+    if (result.ok) {
+      expect(result.value.startTimeMs).toBe(1782417600000);
     }
   });
 });

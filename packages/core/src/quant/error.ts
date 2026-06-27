@@ -4,4 +4,5 @@ export type QuantError =
   | { readonly kind: 'degenerate-book'; readonly detail: string }
   | { readonly kind: 'no-convergence'; readonly detail: string }
   | { readonly kind: 'invalid-config'; readonly detail: string }
-  | { readonly kind: 'empty-sample' };
+  | { readonly kind: 'empty-sample' }
+  | { readonly kind: 'insufficient-legs'; readonly detail: string };

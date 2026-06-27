@@ -1,4 +1,4 @@
-import { ok, type Result, type ScoreUpdate } from '@txline-agent/core';
+import { gameStateFromStatusId, ok, type Result, type ScoreUpdate } from '@txline-agent/core';
 import type { ScoresPayload } from '../schemas/scores.js';
 import type { MapError } from './error.js';
 
@@ -37,8 +37,11 @@ export const mapScorePayload = (raw: ScoresPayload): Result<ScoreUpdate, MapErro
     fixtureId: raw.FixtureId,
     seq: raw.Seq,
     tsMs: raw.Ts,
-    gameState: raw.GameState ?? '',
+    // Derive the phase from StatusId: the replay feed freezes GameState at "scheduled" and only
+    // StatusId transitions to the final-whistle code (5 F / 10 FET / 13 FPE). sourceRef: O9.
+    gameState: gameStateFromStatusId(raw.StatusId ?? null, raw.GameState ?? ''),
     participant1IsHome: raw.Participant1IsHome,
+    startTimeMs: raw.StartTime ?? null,
     homeGoals,
     awayGoals,
     stats,

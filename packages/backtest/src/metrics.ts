@@ -1,13 +1,19 @@
 import {
+  bootstrapMeanCi,
   brierScore,
   buildCalibrationCurve,
   closingLineValueProb,
   decimalOddsMilliToProb,
   logLoss,
+  SeededPrng,
   type CalibrationBin,
   type CalibrationSample,
+  type ConfidenceInterval,
   type SettledPosition,
 } from '@txline-agent/core';
+
+// Fixed seed so the bootstrap confidence interval is byte-identical across runs of the same data.
+const CLV_BOOTSTRAP_SEED = 1;
 
 export type CalibrationReport = {
   readonly brier: number;
@@ -33,6 +39,9 @@ export type BacktestMetrics = {
   /** Number of settled bets that had a known closing line (the CLV denominator). A bet with no
    * post-entry consensus observation has no defined CLV and is excluded. */
   readonly clvSamples: number;
+  /** Bootstrap 95% confidence interval for mean CLV: whether the edge interval excludes zero is
+   * the load-bearing question for a quant, far more than the point estimate. Null with no CLV samples. */
+  readonly clvCi: ConfidenceInterval | null;
   readonly calibration: CalibrationReport | null;
   readonly equityCurve: readonly EquityPoint[];
   readonly maxDrawdown: bigint;
@@ -72,8 +81,10 @@ export const computeBacktestMetrics = (
     totalPnl += settlement.pnl;
     // Only count CLV when the closing line is known (a consensus update arrived after entry); a
     // bet with no later observation has no defined CLV and would otherwise count a false zero.
+    // CLV compares the market consensus at entry against the close, so it uses entryConsensusProb
+    // (the de-vigged 1X2 line at entry), not the model fair probability the decision carries.
     if (settlement.closingFairProbKnown) {
-      clvValues.push(closingLineValueProb(settlement.decision.fairProb, settlement.closingFairProb));
+      clvValues.push(closingLineValueProb(settlement.entryConsensusProb, settlement.closingFairProb));
     }
     impliedValues.push(decimalOddsMilliToProb(settlement.decision.entryOddsMilli));
     calibrationSamples.push({
@@ -116,6 +127,7 @@ export const computeBacktestMetrics = (
     clvPositiveRate:
       clvValues.length > 0 ? clvValues.filter((value) => value > 0).length / clvValues.length : 0,
     clvSamples: clvValues.length,
+    clvCi: bootstrapMeanCi(clvValues, new SeededPrng(CLV_BOOTSTRAP_SEED)),
     calibration,
     equityCurve,
     maxDrawdown,

@@ -66,6 +66,13 @@ export const prob = (value: number): Result<Prob, UnitError> => {
   return ok(value as Prob);
 };
 
+/** Clamp a finite number into [0, 1] and brand it Prob. Infallible; for values already
+ * known to be near-probabilities (a de-vig quotient, a summed scoreline mass) that a
+ * floating-point rounding can nudge a hair outside the interval. A non-finite input
+ * collapses to 0 so the brand always holds a real probability. */
+export const clampProb = (value: number): Prob =>
+  (!Number.isFinite(value) ? 0 : value < 0 ? 0 : value > 1 ? 1 : value) as Prob;
+
 /** Build a non-negative MicroUsd from an integer bigint. */
 export const microUsd = (value: bigint): Result<MicroUsd, UnitError> => {
   if (value < 0n) {

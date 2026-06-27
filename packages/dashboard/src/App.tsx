@@ -115,8 +115,8 @@ export const App = (): ReactNode => {
       <div className="section-title">Position ledger</div>
       {snapshot.positions.length === 0 ? (
         <p className="empty">
-          No decisions committed yet. The agent commits when a steam or divergence signal clears
-          risk; settlements appear after the final whistle.
+          No decisions committed yet. The agent commits when a cross-market relative-value signal
+          clears risk; settlements appear after the final whistle.
         </p>
       ) : (
         <div className="pos-grid">

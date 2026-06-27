@@ -1,9 +1,12 @@
 import {
+  classifyMarketKind,
+  classifyMarketPeriod,
   decimalOddsMilli,
   err,
   mapOutcomeLabel,
   marketKey,
   ok,
+  parseMarketLine,
   pctStringToProb,
   SUPER_ODDS_TYPE_1X2,
   type OddsLine,
@@ -62,6 +65,9 @@ export const mapOddsPayload = (raw: OddsPayload): Result<OddsUpdate, MapError> =
     }
     lines.push({
       outcome: isResult1X2 ? mapOutcomeLabel(label) : 'other',
+      // The normalized raw label carries the side for Over/Under and Asian-Handicap markets
+      // (over/under, part1/part2), which the cross-market model needs to place each line.
+      label: label.trim().toLowerCase(),
       decimalOddsMilli: odds.value,
       impliedPct,
     });
@@ -82,6 +88,11 @@ export const mapOddsPayload = (raw: OddsPayload): Result<OddsUpdate, MapError> =
     superOddsType: raw.SuperOddsType,
     inRunning: raw.InRunning,
     marketKey: key,
+    // Classify once here (the single source of truth) so the pipeline never re-parses
+    // SuperOddsType / MarketParameters / MarketPeriod. sourceRef: market-taxonomy probe 2026-06-27.
+    marketKind: classifyMarketKind(raw.SuperOddsType),
+    line: parseMarketLine(raw.MarketParameters ?? null),
+    period: classifyMarketPeriod(raw.MarketPeriod ?? null),
     lines,
   });
 };

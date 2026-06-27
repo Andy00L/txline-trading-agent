@@ -82,6 +82,10 @@ const summaryRows = (run: BacktestRun): string => {
     ['Final bankroll', asUsdc(metrics.finalBankroll)],
     ['Max drawdown', asUsdc(metrics.maxDrawdown)],
     ['Mean CLV (probability)', asFixed(metrics.meanClvProb)],
+    [
+      'Mean CLV 95% CI',
+      metrics.clvCi === null ? 'n/a' : `[${asFixed(metrics.clvCi.lower)}, ${asFixed(metrics.clvCi.upper)}]`,
+    ],
     ['CLV-positive rate', asPercent(metrics.clvPositiveRate)],
     ['CLV samples', `${metrics.clvSamples} of ${metrics.bets}`],
   ];

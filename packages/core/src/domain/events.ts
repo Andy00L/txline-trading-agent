@@ -1,4 +1,4 @@
-import type { MarketKey, OddsLine } from './market.js';
+import type { MarketKey, MarketKind, MarketPeriodKind, OddsLine } from './market.js';
 
 /**
  * Normalized domain events. txline maps the raw zod-parsed API payloads into these
@@ -6,7 +6,7 @@ import type { MarketKey, OddsLine } from './market.js';
  * same types flow whether the source is live SSE or replay.
  */
 
-/** A normalized odds update for one market line at a point in time. */
+/** A normalized odds update for one market on a fixture at a point in time. */
 export type OddsUpdate = {
   readonly fixtureId: number;
   readonly messageId: string; // keys the odds Merkle proof
@@ -15,6 +15,13 @@ export type OddsUpdate = {
   readonly superOddsType: string;
   readonly inRunning: boolean;
   readonly marketKey: MarketKey;
+  /** The classified market kind (1X2 / Over-Under / Asian-Handicap / other), so the
+   * cross-market model can group the surface for a fixture. */
+  readonly marketKind: MarketKind;
+  /** The total-goals or handicap line for Over/Under and Asian-Handicap markets; null for 1X2. */
+  readonly line: number | null;
+  /** Full game or first half; the strategy trades full-game markets only. */
+  readonly period: MarketPeriodKind;
   readonly lines: readonly OddsLine[];
 };
 
@@ -27,6 +34,9 @@ export type ScoreUpdate = {
   readonly tsMs: number;
   readonly gameState: string;
   readonly participant1IsHome: boolean;
+  /** Scheduled kickoff in ms, or null when the record omits it. Drives the cross-market
+   * time-to-kickoff entry gate. */
+  readonly startTimeMs: number | null;
   readonly homeGoals: number | null;
   readonly awayGoals: number | null;
   readonly stats: ReadonlyMap<number, number>;

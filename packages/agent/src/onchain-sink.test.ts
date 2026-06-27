@@ -84,6 +84,7 @@ const settledPosition = (result: Outcome): SettledPosition => ({
   pnl: 26_000_000n,
   settledAtMs: 2_000,
   settledSeq: 412,
+  entryConsensusProb: probOf(0.5),
   closingFairProb: probOf(0.52),
   closingFairProbKnown: true,
 });

@@ -1,4 +1,5 @@
 import { err, ok, type Result } from '../result.js';
+import type { Prng } from '../prng.js';
 import type { DecimalOddsMilli, Prob } from '../units.js';
 import type { QuantError } from './error.js';
 
@@ -106,3 +107,47 @@ export const closingLineValueOdds = (
  * De-vig both sides identically before calling. */
 export const closingLineValueProb = (entryFairProb: Prob, closingFairProb: Prob): number =>
   closingFairProb - entryFairProb;
+
+export type ConfidenceInterval = {
+  readonly mean: number;
+  readonly lower: number;
+  readonly upper: number;
+  /** The number of bootstrap resamples used (for reporting the method). */
+  readonly resamples: number;
+};
+
+/**
+ * Two-sided 95% percentile-bootstrap confidence interval for the mean of a sample, by
+ * resampling with replacement. Deterministic given the prng, so the report stays
+ * byte-identical. Returns null for an empty sample. This is what turns a point estimate of
+ * mean Closing Line Value into an interval a quant can judge: whether it excludes zero.
+ * sourceRef: Efron (1979) bootstrap, the percentile method.
+ */
+export const bootstrapMeanCi = (
+  values: readonly number[],
+  prng: Prng,
+  resamples = 2000,
+): ConfidenceInterval | null => {
+  if (values.length === 0 || resamples < 1) {
+    return null;
+  }
+  const observedMean = values.reduce((sum, value) => sum + value, 0) / values.length;
+  const resampledMeans: number[] = [];
+  for (let resample = 0; resample < resamples; resample += 1) {
+    let total = 0;
+    for (let draw = 0; draw < values.length; draw += 1) {
+      const index = Math.min(values.length - 1, Math.floor(prng.next() * values.length));
+      total += values[index] ?? 0;
+    }
+    resampledMeans.push(total / values.length);
+  }
+  resampledMeans.sort((left, right) => left - right);
+  const lowerIndex = Math.floor(0.025 * (resamples - 1));
+  const upperIndex = Math.ceil(0.975 * (resamples - 1));
+  return {
+    mean: observedMean,
+    lower: resampledMeans[lowerIndex] ?? observedMean,
+    upper: resampledMeans[upperIndex] ?? observedMean,
+    resamples,
+  };
+};

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { SeededPrng } from '../prng.js';
 import { decimalOddsMilli, prob } from '../units.js';
 import type { DecimalOddsMilli, Prob } from '../units.js';
 import {
+  bootstrapMeanCi,
   brierScore,
   buildCalibrationCurve,
   closingLineValueOdds,
@@ -99,5 +101,41 @@ describe('closing line value', () => {
 
   it('probability-based CLV is positive when the entry implies a lower prob than the close', () => {
     expect(closingLineValueProb(probOf(0.45), probOf(0.5))).toBeCloseTo(0.05, 12);
+  });
+});
+
+describe('bootstrapMeanCi', () => {
+  it('returns null for an empty sample', () => {
+    expect(bootstrapMeanCi([], new SeededPrng(1))).toBeNull();
+  });
+
+  it('brackets the observed mean and is deterministic for a fixed seed', () => {
+    const values = [0.01, 0.02, -0.005, 0.03, 0.015, 0.008, 0.02, -0.01, 0.025, 0.012];
+    const first = bootstrapMeanCi(values, new SeededPrng(1));
+    const second = bootstrapMeanCi(values, new SeededPrng(1));
+    expect(first).not.toBeNull();
+    if (first && second) {
+      expect(first.lower).toBe(second.lower);
+      expect(first.upper).toBe(second.upper);
+      expect(first.lower).toBeLessThanOrEqual(first.mean);
+      expect(first.upper).toBeGreaterThanOrEqual(first.mean);
+    }
+  });
+
+  it('collapses to the constant for a zero-variance sample', () => {
+    const result = bootstrapMeanCi([0.5, 0.5, 0.5], new SeededPrng(7));
+    if (result) {
+      expect(result.mean).toBeCloseTo(0.5, 12);
+      expect(result.lower).toBeCloseTo(0.5, 12);
+      expect(result.upper).toBeCloseTo(0.5, 12);
+    }
+  });
+
+  it('yields a positive lower bound for a clearly positive sample', () => {
+    const values = Array.from({ length: 50 }, () => 0.1);
+    const result = bootstrapMeanCi(values, new SeededPrng(3));
+    if (result) {
+      expect(result.lower).toBeGreaterThan(0);
+    }
   });
 });

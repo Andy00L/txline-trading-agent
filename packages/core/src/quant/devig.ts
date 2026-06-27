@@ -1,5 +1,5 @@
 import { err, ok, type Result } from '../result.js';
-import { decimalOddsMilliToProb, type Prob } from '../units.js';
+import { clampProb, decimalOddsMilliToProb } from '../units.js';
 import type { DevigMethod, FairBook, FairOutcome } from '../domain/fairbook.js';
 import type { OddsLine, Outcome } from '../domain/market.js';
 import type { QuantError } from './error.js';
@@ -9,8 +9,6 @@ import type { QuantError } from './error.js';
 const SHIN_MAX_ITERS = 200;
 const SHIN_TOLERANCE = 1e-12; // |sum p_i - 1|
 const SHIN_Z_UPPER = 1 - 1e-9; // stay clear of the z = 1 singularity
-
-const clampProb = (value: number): Prob => Math.min(1, Math.max(0, value)) as Prob;
 
 type Implied = { readonly outcome: Outcome; readonly r: number };
 

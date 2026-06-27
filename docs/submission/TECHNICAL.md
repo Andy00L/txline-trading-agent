@@ -5,21 +5,31 @@ technical highlights, the exact TxLINE endpoints used, and our feedback on the T
 
 ## Core idea
 
-An autonomous, deterministic agent that trades World Cup 1X2 odds on a consensus steam /
-divergence strategy, wrapped in a verifiable chain that makes its track record trustless:
+An autonomous, deterministic agent that trades World Cup soccer odds on a cross-market
+relative-value strategy and keeps a trustless on-chain track record:
 
-1. Inputs are checked against TxLINE's on-chain Merkle roots before they influence a trade.
-2. Each decision is sealed on-chain before kickoff: `commit_hash = keccak256(borsh(strategy,
-   index, fixture, market, side, fair prob, entry odds, stake, signal hash, nonce))`. Only
-   routing fields (fixture, market) are in the clear; side, price, and stake stay sealed.
-3. At settle, the agent reveals the sealed fields and the program CPIs into
+1. Cross-market signal. For each fixture the agent fits one Dixon-Coles goals model
+   (parametrized by supremacy = home minus away expected goals, and total = home plus away) jointly
+   to the full odds surface the free tier serves: the 1X2 match-result market, the Over/Under
+   total-goals ladder, and the Asian-Handicap ladder. It backs the 1X2 outcome the joint fit prices
+   longer than the 1X2 line alone implies (the lagging leg, after Kaunitz et al. 2017), sized by a
+   real positive Kelly edge and entered in the liquid near-kickoff window. A de-margined consensus
+   cannot be out-forecast, so the edge is cross-market consistency and slow-leg timing, not a claim
+   to beat an efficient market.
+2. Committed decisions. Each decision is sealed on-chain before kickoff:
+   `commit_hash = keccak256(borsh(strategy, index, fixture, market, side, fair prob, entry odds,
+   stake, signal hash, nonce))`. Only routing fields (fixture, market) are in the clear; side,
+   price, and stake stay sealed, so a decision cannot be backfilled or altered after the outcome.
+3. Verified settlement. At settle the agent reveals the sealed fields and the program CPIs into
    `txoracle::validate_stat`. The 1X2 predicate is derived on-chain from the claim (home is
-   `participant1 - participant2 > 0`, draw `== 0`, away `< 0`); the program writes PnL only if
-   the proof passes. A bad proof, a missing root, a wrong fixture, or a swapped stat reverts the
-   whole settle.
+   `participant1 - participant2 > 0`, draw `== 0`, away `< 0`); the program writes PnL only if the
+   proof passes, so the recorded outcome is proven against TxLINE's own oracle. A bad proof, a
+   missing root, a wrong fixture, or a swapped stat reverts the whole settle.
 
-The decision logic is one code path for live and replay, so a green walk-forward backtest is
-evidence about live behaviour rather than a separate simulation.
+The decision logic is one code path for live and replay, so the walk-forward backtest is direct
+evidence about live behaviour rather than a separate simulation. The edge is reported honestly as
+Closing Line Value (entry versus the last pre-kickoff consensus) with a bootstrap confidence
+interval, the metric a professional trading desk tracks, alongside calibration and drawdown.
 
 ## Business highlights
 
@@ -28,8 +38,11 @@ evidence about live behaviour rather than a separate simulation.
 - It answers the judging problem directly. Because matches end after the deadline, a screenshot
   proves nothing; a commit-before-kickoff plus a CPI-verified settlement is a record no one can
   cherry-pick or backfill.
-- The edge is measured honestly as Closing Line Value (beating the de-margined consensus close),
-  the metric a professional trading desk actually tracks, with calibration and drawdown alongside.
+- The edge is measured honestly as Closing Line Value with a bootstrap confidence interval, the
+  metric a professional trading desk tracks. Over the group stage (22 settled bets) the mean CLV is
+  +0.0024 (95% CI [-0.0007, +0.0057]), with 59% of bets beating the pre-kickoff close, a marked
+  improvement over the prior steam strategy's -0.0424 on 8 bets (12.5% positive). It is a small,
+  honestly-bounded edge reported with calibration and drawdown alongside, not a cherry-picked ROI.
 - Production-shaped: Docker, a read-only operator API and dashboard, reconnect plus gap-backfill,
   a security audit, and devnet integration with the sponsor's program.
 
@@ -37,6 +50,11 @@ evidence about live behaviour rather than a separate simulation.
 
 - Strict monorepo layering enforced by ESLint and a CI grep: `core` is pure (no IO, no clock, no
   RNG, no chain client), so the quant is unit-testable and deterministic.
+- The signal is a Dixon-Coles scoreline model (parametrized by supremacy and total goals) fitted by
+  a deterministic grid search jointly to the 1X2, Over/Under, and Asian-Handicap markets; the 1X2 is
+  de-vigged with Shin (favourite-longshot aware). The model fit, the cross-market value signal, the
+  kickoff-gated entry, and the bootstrap Closing-Line-Value interval are all pure functions in
+  `core` with golden tests.
 - Errors as values end to end; the only `throw` is the process boundary. Money is integer
   micro-USD (`bigint`); odds are integer milli (decimal x1000). No floating point in money math.
 - The commit-reveal binding is a keccak over a borsh layout that is byte-identical between the
@@ -45,8 +63,12 @@ evidence about live behaviour rather than a separate simulation.
   instruction data, never stored on-chain, so account sizes are independent of proof depth.
 - Resilience: SSE reconnect with exponential backoff and full jitter, one JWT re-auth on 401,
   REST gap-backfill on reconnect, and idempotency keyed by `MessageId` and `(fixtureId, seq)`.
-- 196 TypeScript tests and 9 Rust tests; a security audit (docs/audit/M8-audit.md) that found and
-  fixed two critical on-chain settlement trust gaps, re-proven on devnet.
+- A broad TypeScript test suite plus Rust program tests; a security audit (docs/audit/M8-audit.md)
+  that found and fixed two critical on-chain settlement trust gaps, re-proven on devnet. A later
+  upgrade pass added the cross-market goals model and fixed three replay-feed correctness bugs:
+  settlement now keys on the numeric `StatusId` (the textual `GameState` is frozen at "scheduled" on
+  the `/updates` feed), Closing Line Value is measured against the pre-kickoff close (never an
+  in-play price), and first-half markets are no longer traded against the full-time score.
 
 ## TxLINE endpoints used
 
@@ -69,6 +91,23 @@ On-chain, the agent CPIs into `txoracle::validate_stat` (devnet
 `6pW64gN1s2uqjHkn1unFeEjAwJkPGHoppGvS715wyP2J`) with a single read-only `daily_scores_merkle_roots`
 account re-derived from the proof timestamp.
 
+## Extensions (scoped, not yet wired)
+
+The trust chain and the strategy compose cleanly with three extensions the design already
+accommodates:
+
+- Prove the inputs on-chain too. The oracle exposes `validate_odds` (a read-only validator over
+  `daily_odds_merkle_roots`), so the agent could CPI-prove that the odds a decision was based on are
+  a genuine TxLINE record, closing the loop end to end: inputs and outcomes both proven against
+  TxODDS's own roots. Today the settle proves the deciding score; the odds proof is the next link.
+- Bet and settle Over/Under directly. `validate_stat` accepts an `Add` binary expression, so a
+  total-goals predicate (Over 2.5 = participant1 + participant2 goals `GreaterThan 2`) settles on the
+  same primitive. The cross-market model already prices the Over/Under ladder; this would add it as a
+  bettable, on-chain-settleable market and roughly double the decision rate.
+- Anchor the fit with an independent prior. A World Football Elo rating mapped to a supremacy prior
+  would corroborate the cross-market signal with information the consensus does not contain, the one
+  clean way to add genuine forecasting edge to a de-margined feed.
+
 ## TxLINE API feedback
 
 What worked well:
@@ -84,15 +123,25 @@ What worked well:
 
 Friction we hit (all surmountable, noted to help the next integrator):
 
-- The 1X2 market shape was not obvious from the docs. We confirmed from live payloads that it is
-  `SuperOddsType = "1X2_PARTICIPANT_RESULT"` with `PriceNames = ["part1", "draw", "part2"]`, and
-  that handicap and over/under markets reuse `part1`/`part2`, so outcome mapping must be gated on
-  the market type. A short table of market types and their price-name conventions would help.
+- The market surface per fixture was not obvious from the docs. We confirmed from a live taxonomy
+  probe that each World Cup fixture carries three markets: `1X2_PARTICIPANT_RESULT`
+  (`PriceNames ["part1","draw","part2"]`), `OVERUNDER_PARTICIPANT_GOALS` (`["over","under"]`, with
+  the total-goals line in `MarketParameters` as `line=2.5`), and `ASIANHANDICAP_PARTICIPANT_GOALS`
+  (`["part1","part2"]`, handicap in `line=...`). Full-game markets carry a null `MarketPeriod`;
+  first-half markets carry `half=1`. A short table of market types, their price-name conventions,
+  and the period encoding would save every integrator this probe.
 - The scores channel is PascalCase (`FixtureId`, `GameState`, `Seq`, `Stats`,
   `Participant1IsHome`), while some examples implied camelCase. The mismatch cost real debugging;
   documenting the on-the-wire casing per channel would save time.
 - `GameState` is null on pre-match odds records, so a strict schema must treat it as nullable,
   not merely optional.
+- The single most costly surprise: on the `/api/scores/updates` (historical and replay) feed the
+  textual `GameState` is frozen at "scheduled" for the entire match, including after the final
+  whistle, while the real phase lives only in the numeric `StatusId` (2 H1, 3 HT, 4 H2, 5 F ended,
+  10 FET, 13 FPE). Settlement that keys on the `GameState` string therefore never fires on the
+  replay feed. Documenting that finality must be read from `StatusId` on `/updates` (and that the
+  goal totals appear in `Stats` keys 1 and 2 well before any final string) would prevent a silent
+  "nothing ever settles" failure.
 - Merkle hash and root fields arrive as 32-byte arrays (`number[32]`) on the wire, not the hex
   strings the OpenAPI "binary" format suggested. Calling this out explicitly would prevent a
   class of encoding bugs.

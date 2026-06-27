@@ -16,6 +16,10 @@ export const OUTCOMES_1X2: readonly Outcome[] = ['home', 'draw', 'away'];
  */
 export type OddsLine = {
   readonly outcome: Outcome;
+  /** The raw price label from the feed (PriceNames), normalized to lower case: "part1",
+   * "draw", "part2", "over", "under". It carries the side for Over/Under and Asian-Handicap
+   * markets, where outcome stays "other"; the cross-market model reads it to place each line. */
+  readonly label: string;
   readonly decimalOddsMilli: DecimalOddsMilli;
   readonly impliedPct: Prob | null;
 };
@@ -66,3 +70,79 @@ const OUTCOME_BY_LABEL = new Map<string, Outcome>([
 
 export const mapOutcomeLabel = (label: string): Outcome =>
   OUTCOME_BY_LABEL.get(label.trim().toLowerCase()) ?? 'other';
+
+/**
+ * The kind of market a SuperOddsType denotes. The free World Cup tier serves three per
+ * fixture: 1X2 match result, Over/Under total goals, and Asian Handicap on goals.
+ * sourceRef: market-taxonomy probe 2026-06-27 (live odds feed: 1X2_PARTICIPANT_RESULT,
+ * OVERUNDER_PARTICIPANT_GOALS, ASIANHANDICAP_PARTICIPANT_GOALS).
+ */
+export type MarketKind = '1x2' | 'over-under' | 'asian-handicap' | 'other';
+
+/**
+ * The period a market settles over: the full game (MarketPeriod null or empty) or the
+ * first half (MarketPeriod "half=1"); only those two values occur on the feed.
+ * sourceRef: market-taxonomy probe 2026-06-27, docs/research/M0-recon-findings.md O2.
+ */
+export type MarketPeriodKind = 'full-game' | 'first-half' | 'other';
+
+/** SuperOddsType for the Over/Under total-goals market. PriceNames ["over","under"],
+ * MarketParameters "line=X". sourceRef: market-taxonomy probe 2026-06-27. */
+export const SUPER_ODDS_TYPE_OVER_UNDER = 'OVERUNDER_PARTICIPANT_GOALS';
+
+/** SuperOddsType for the Asian-Handicap goals market. PriceNames ["part1","part2"],
+ * MarketParameters "line=X". sourceRef: market-taxonomy probe 2026-06-27. */
+export const SUPER_ODDS_TYPE_ASIAN_HANDICAP = 'ASIANHANDICAP_PARTICIPANT_GOALS';
+
+/**
+ * Classify a SuperOddsType into a MarketKind. Unknown types are "other" and are ignored by
+ * the strategy. sourceRef: market-taxonomy probe 2026-06-27.
+ */
+export const classifyMarketKind = (superOddsType: string): MarketKind => {
+  switch (superOddsType) {
+    case SUPER_ODDS_TYPE_1X2:
+      return '1x2';
+    case SUPER_ODDS_TYPE_OVER_UNDER:
+      return 'over-under';
+    case SUPER_ODDS_TYPE_ASIAN_HANDICAP:
+      return 'asian-handicap';
+    default:
+      return 'other';
+  }
+};
+
+/**
+ * Classify a MarketPeriod string. The feed uses null or empty for the full match and
+ * "half=1" for the first half; anything else is "other" and is not traded as a full-game
+ * market. sourceRef: market-taxonomy probe 2026-06-27 (only those two values occur).
+ */
+export const classifyMarketPeriod = (marketPeriod: string | null): MarketPeriodKind => {
+  if (marketPeriod === null || marketPeriod === '') {
+    return 'full-game';
+  }
+  if (marketPeriod === 'half=1') {
+    return 'first-half';
+  }
+  return 'other';
+};
+
+// The total-goals or handicap line lives in MarketParameters as "line=X" (for example
+// "line=2.5", "line=-0.25"). sourceRef: market-taxonomy probe 2026-06-27.
+const MARKET_LINE_PATTERN = /^line=(-?\d+(?:\.\d+)?)$/;
+
+/**
+ * Parse the numeric line from a MarketParameters value, or null when it is absent or
+ * malformed (1X2 markets carry no line). sourceRef: market-taxonomy probe 2026-06-27.
+ */
+export const parseMarketLine = (marketParameters: string | null): number | null => {
+  if (marketParameters === null) {
+    return null;
+  }
+  const match = MARKET_LINE_PATTERN.exec(marketParameters.trim());
+  const captured = match?.[1];
+  if (captured === undefined) {
+    return null;
+  }
+  const value = Number(captured);
+  return Number.isFinite(value) ? value : null;
+};

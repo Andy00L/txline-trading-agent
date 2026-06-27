@@ -35,6 +35,7 @@ export const renderMarkdownReport = (run: BacktestRun): string => {
     '| Metric | Value |',
     '| --- | --- |',
     `| Mean CLV (probability) | ${asFixed(metrics.meanClvProb)} |`,
+    `| Mean CLV 95% CI (bootstrap) | ${metrics.clvCi === null ? 'n/a' : `[${asFixed(metrics.clvCi.lower)}, ${asFixed(metrics.clvCi.upper)}]`} |`,
     `| CLV-positive rate | ${asPercent(metrics.clvPositiveRate)} |`,
     `| CLV samples | ${metrics.clvSamples} of ${metrics.bets} |`,
     `| Mean implied probability | ${asFixed(metrics.meanImpliedProb)} |`,
