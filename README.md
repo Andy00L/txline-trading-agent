@@ -1,5 +1,7 @@
 # TxLINE autonomous odds-trading agent
 
+![TxLINE agent operator dashboard: live feed status, the ingest to settle pipeline, and the committed and settled position ledger with on-chain Verified on Solana stamps](docs/assets/dashboard.png)
+
 An autonomous, deterministic agent that ingests the live TxLINE World Cup feed (odds and
 scores, Merkle-anchored on Solana), trades a consensus steam / divergence strategy, and keeps a
 **trustless, non-cherry-picked on-chain track record**: every decision is hashed on-chain before
