@@ -18,9 +18,10 @@ export const mapScorePayload = (raw: ScoresPayload): Result<ScoreUpdate, MapErro
   const stats = new Map<number, number>();
   if (raw.Stats) {
     for (const [rawKey, value] of Object.entries(raw.Stats)) {
-      const numericKey = Number(rawKey);
-      if (Number.isInteger(numericKey)) {
-        stats.set(numericKey, value);
+      // Only accept a canonical non-negative decimal key. Number() would coerce '' to 0, '0x10'
+      // to 16, and '1e3' to 1000, inserting values under unintended keys; a strict pattern avoids it.
+      if (/^\d+$/.test(rawKey)) {
+        stats.set(Number(rawKey), value);
       }
     }
   }

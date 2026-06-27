@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PCT_NUMBER_PATTERN } from '@txline-agent/core';
 
 /**
  * Odds payload from the odds channel (SSE stream and REST snapshots).
@@ -28,7 +29,7 @@ export const oddsPayloadSchema = z.object({
   // Decimal odds multiplied by 1000 (O1). sourceRef: docs/research/M0-recon-findings.md.
   Prices: z.array(z.number().int()).nullish(),
   // Implied probability as a percentage with three decimals, or "NA" for quarter handicaps.
-  Pct: z.array(z.string().regex(/^(NA|\d+\.\d{3})$/)).nullish(),
+  Pct: z.array(z.union([z.literal('NA'), z.string().regex(PCT_NUMBER_PATTERN)])).nullish(),
 });
 
 export type OddsPayload = z.infer<typeof oddsPayloadSchema>;

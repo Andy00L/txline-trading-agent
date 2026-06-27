@@ -1,4 +1,5 @@
 export * from './result.js';
+export * from './redact.js';
 export * from './units.js';
 export * from './clock.js';
 export * from './prng.js';

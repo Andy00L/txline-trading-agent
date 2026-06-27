@@ -65,4 +65,24 @@ describe('encodeSettleArgs', () => {
     });
     expect(result.ok).toBe(false);
   });
+
+  it('rejects a stat value beyond i32 instead of silently masking', () => {
+    const result = encodeSettleArgs({
+      ...canonical,
+      statHome: { ...canonical.statHome, statToProve: { key: 1, value: 2 ** 31, period: 0 } },
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('bad-range');
+      expect(result.error.field).toBe('statHome.statToProve.value');
+    }
+  });
+
+  it('rejects a claimed result outside 0/1/2', () => {
+    const result = encodeSettleArgs({ ...canonical, claimedResult: 5 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.field).toBe('claimedResult');
+    }
+  });
 });

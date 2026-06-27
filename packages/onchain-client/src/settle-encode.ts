@@ -1,6 +1,7 @@
 import { err, ok, type Result } from '@txline-agent/core';
 import { encodeRevealArgs, type EncodeError, type RevealArgs } from './borsh.js';
 import { BorshWriter } from './borsh-writer.js';
+import { checkI32, checkI64, checkSide, checkU32 } from './int-range.js';
 
 export type ScoreStatInput = { readonly key: number; readonly value: number; readonly period: number };
 export type ProofNodeInput = { readonly hash: Uint8Array; readonly isRightSibling: boolean };
@@ -51,6 +52,9 @@ const checkProof = (proof: readonly ProofNodeInput[], label: string): EncodeErro
 };
 
 const checkStatTerm = (term: StatTermInput, label: string): EncodeError | null =>
+  checkU32(term.statToProve.key, `${label}.statToProve.key`) ??
+  checkI32(term.statToProve.value, `${label}.statToProve.value`) ??
+  checkI32(term.statToProve.period, `${label}.statToProve.period`) ??
   ensure32(term.eventStatRoot, `${label}.eventStatRoot`) ??
   checkProof(term.statProof, `${label}.statProof`);
 
@@ -78,6 +82,12 @@ export const encodeSettleArgs = (args: SettleArgsInput): Result<Uint8Array, Enco
     return reveal;
   }
   const failure =
+    checkSide(args.claimedResult, 'claimedResult') ??
+    checkI64(args.ts, 'ts') ??
+    checkI64(args.fixtureSummary.fixtureId, 'fixtureSummary.fixtureId') ??
+    checkI32(args.fixtureSummary.updateStats.updateCount, 'fixtureSummary.updateStats.updateCount') ??
+    checkI64(args.fixtureSummary.updateStats.minTimestamp, 'fixtureSummary.updateStats.minTimestamp') ??
+    checkI64(args.fixtureSummary.updateStats.maxTimestamp, 'fixtureSummary.updateStats.maxTimestamp') ??
     ensure32(args.fixtureSummary.eventsSubTreeRoot, 'fixtureSummary.eventsSubTreeRoot') ??
     checkProof(args.fixtureProof, 'fixtureProof') ??
     checkProof(args.mainTreeProof, 'mainTreeProof') ??

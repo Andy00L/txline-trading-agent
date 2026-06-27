@@ -199,4 +199,129 @@ describe('runPipeline', () => {
     expect(settled?.result).toBe('home');
     expect(settled?.won).toBe(true);
   });
+
+  it('leaves a position open when the fixture never reaches a final whistle (B2)', async () => {
+    // Steam fires and a bet is committed, but only in-running scores arrive (feed cut off
+    // before the whistle). The bet must stay open and unrealized, never settled against an
+    // in-running snapshot.
+    const sink = new RecordingSink();
+    const result = await runPipeline(
+      new ArrayFeed([
+        oddsEvent(0, 1_000, 2600, 3600, 3600),
+        oddsEvent(1, 60_000, 2300, 3800, 3800),
+        oddsEvent(2, 120_000, 2100, 4000, 4000),
+        scoreEvent(3, 3_000_000, 1, 0, 'H2'),
+        scoreEvent(4, 5_000_000, 2, 1, 'H2'),
+      ]),
+      sink,
+      config,
+    );
+    expect(result.committed).toBe(1);
+    expect(result.settled).toBe(0);
+    expect(sink.settles).toHaveLength(0);
+  });
+
+  it('locks on the first final whistle even if a corrected final arrives later (B1/B3)', async () => {
+    // First final 2-1 (home win) at seq 4, then a corrected final 2-2 (draw) at seq 5. The bet
+    // settles once, against the first final: home win, settledSeq 4.
+    const sink = new RecordingSink();
+    const result = await runPipeline(
+      new ArrayFeed([
+        oddsEvent(0, 1_000, 2600, 3600, 3600),
+        oddsEvent(1, 60_000, 2300, 3800, 3800),
+        oddsEvent(2, 120_000, 2100, 4000, 4000),
+        scoreEvent(4, 7_200_000, 2, 1, 'F'),
+        scoreEvent(5, 7_260_000, 2, 2, 'F'),
+      ]),
+      sink,
+      config,
+    );
+    expect(result.settled).toBe(1);
+    expect(sink.settles).toHaveLength(1);
+    expect(sink.settles[0]?.settledSeq).toBe(4);
+    expect(sink.settles[0]?.result).toBe('home');
+    expect(sink.settles[0]?.won).toBe(true);
+  });
+
+  it('settles on an extra-time final (FET), not only regulation (F)', async () => {
+    const sink = new RecordingSink();
+    const result = await runPipeline(
+      new ArrayFeed([
+        oddsEvent(0, 1_000, 2600, 3600, 3600),
+        oddsEvent(1, 60_000, 2300, 3800, 3800),
+        oddsEvent(2, 120_000, 2100, 4000, 4000),
+        scoreEvent(3, 9_000_000, 3, 1, 'FET'),
+      ]),
+      sink,
+      config,
+    );
+    expect(result.settled).toBe(1);
+    expect(sink.settles[0]?.result).toBe('home');
+    expect(sink.settles[0]?.settledSeq).toBe(3);
+  });
+
+  it('ignores a stale in-running frame that arrives after the final whistle (B1)', async () => {
+    // The final 2-1 (home) settles at seq 4; a later, higher-seq in-running 'H2' 3-3 frame (out
+    // of order) must neither re-settle nor change the recorded result.
+    const sink = new RecordingSink();
+    const result = await runPipeline(
+      new ArrayFeed([
+        oddsEvent(0, 1_000, 2600, 3600, 3600),
+        oddsEvent(1, 60_000, 2300, 3800, 3800),
+        oddsEvent(2, 120_000, 2100, 4000, 4000),
+        scoreEvent(4, 7_200_000, 2, 1, 'F'),
+        scoreEvent(5, 7_300_000, 3, 3, 'H2'),
+      ]),
+      sink,
+      config,
+    );
+    expect(result.settled).toBe(1);
+    expect(sink.settles).toHaveLength(1);
+    expect(sink.settles[0]?.settledSeq).toBe(4);
+    expect(sink.settles[0]?.result).toBe('home');
+  });
+
+  it('marks the closing line known when a consensus update arrives after entry (B4)', async () => {
+    // A 4th odds snapshot after the steam entry updates the consensus line, so CLV is known.
+    const sink = new RecordingSink();
+    await runPipeline(
+      new ArrayFeed([
+        oddsEvent(0, 1_000, 2600, 3600, 3600),
+        oddsEvent(1, 60_000, 2300, 3800, 3800),
+        oddsEvent(2, 120_000, 2100, 4000, 4000),
+        oddsEvent(3, 180_000, 2000, 4200, 4200),
+        scoreEvent(4, 7_200_000, 2, 1, 'F'),
+      ]),
+      sink,
+      config,
+    );
+    const settled = sink.settles[0];
+    expect(settled).toBeDefined();
+    if (settled) {
+      expect(settled.closingFairProbKnown).toBe(true);
+      // Home shortened further after entry, so the closing fair prob exceeds the entry prob.
+      expect(settled.closingFairProb > settled.decision.fairProb).toBe(true);
+    }
+  });
+
+  it('marks the closing line unknown when no consensus update follows entry (B4)', async () => {
+    // The decision commits on the only odds snapshot, so no later consensus observation exists:
+    // the closing line is unknown and falls back to the entry prob (excluded from CLV, not a 0).
+    const sink = new RecordingSink();
+    await runPipeline(
+      new ArrayFeed([
+        oddsEvent(0, 1_000, 2600, 3600, 3600),
+        scoreEvent(1, 7_200_000, 2, 1, 'F'),
+      ]),
+      sink,
+      config,
+    );
+    const settled = sink.settles[0];
+    expect(settled).toBeDefined();
+    if (settled) {
+      expect(settled.closingFairProbKnown).toBe(false);
+      // Falls back to the entry prob exactly, so the CLV is a definitional zero, not a real one.
+      expect(settled.closingFairProb).toBe(settled.decision.fairProb);
+    }
+  });
 });

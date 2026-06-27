@@ -16,6 +16,8 @@ pub enum AgentError {
     TxlineProgramMismatch,
     #[msg("Claimed result is not a valid 1X2 side")]
     InvalidClaim,
+    #[msg("Sealed side is not a valid 1X2 side")]
+    InvalidSide,
     #[msg("Daily scores roots account does not match the timestamp")]
     InvalidRootsPda,
     #[msg("Arithmetic overflow")]

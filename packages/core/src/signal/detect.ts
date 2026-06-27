@@ -88,8 +88,12 @@ export const detectSteam = (input: SteamInput, config: SteamConfig): Signal | nu
   if (inWindow.length < 2) {
     return null;
   }
-  const first = inWindow[0];
-  const last = inWindow[inWindow.length - 1];
+  // Pick the move endpoints by timestamp, not array position: the feed can deliver odds
+  // updates out of order (reconnect replay, jitter), so the earliest and latest BY TIME,
+  // not the first and last pushed, define the move. Sorting a copy keeps the input pure.
+  const ordered = [...inWindow].sort((earlier, later) => earlier.tsMs - later.tsMs);
+  const first = ordered[0];
+  const last = ordered[ordered.length - 1];
   if (first === undefined || last === undefined) {
     return null;
   }

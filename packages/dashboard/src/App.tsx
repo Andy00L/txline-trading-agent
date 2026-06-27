@@ -36,8 +36,20 @@ const Stat = ({ value, label }: { readonly value: string; readonly label: string
   </div>
 );
 
-const Header = ({ snapshot }: { readonly snapshot: AgentSnapshot | null }): ReactNode => {
-  const kind = snapshot?.feedStatus?.kind ?? 'connecting';
+const Header = ({
+  snapshot,
+  connected,
+}: {
+  readonly snapshot: AgentSnapshot | null;
+  readonly connected: boolean;
+}): ReactNode => {
+  // Drive the pill from the dashboard's own transport first: a dropped SSE connection shows
+  // "reconnecting" rather than freezing on the last server-reported feed status (stale as live).
+  const kind = !connected
+    ? snapshot
+      ? 'reconnecting'
+      : 'connecting'
+    : (snapshot?.feedStatus?.kind ?? 'connected');
   return (
     <>
       <div className="app-header">
@@ -72,11 +84,11 @@ const Header = ({ snapshot }: { readonly snapshot: AgentSnapshot | null }): Reac
 };
 
 export const App = (): ReactNode => {
-  const snapshot = useAgentState();
+  const { snapshot, connected } = useAgentState();
   if (!snapshot) {
     return (
       <div className="app">
-        <Header snapshot={null} />
+        <Header snapshot={null} connected={connected} />
         <p className="empty">Connecting to the agent API…</p>
       </div>
     );
@@ -84,7 +96,7 @@ export const App = (): ReactNode => {
   const phases = derivePhases(snapshot);
   return (
     <div className="app">
-      <Header snapshot={snapshot} />
+      <Header snapshot={snapshot} connected={connected} />
 
       <div className="section-title">Pipeline</div>
       <div className="ss-card pipeline" style={{ padding: '18px 20px' }}>
@@ -118,8 +130,8 @@ export const App = (): ReactNode => {
         <>
           <div className="section-title">Recent issues</div>
           <div className="ss-card log" style={{ padding: '14px 18px' }}>
-            {snapshot.recentErrors.map((issue, issueIndex) => (
-              <div className="log-row" key={issueIndex}>
+            {snapshot.recentErrors.map((issue) => (
+              <div className="log-row" key={`${issue.atMs}:${issue.stage}:${issue.detail}`}>
                 <span className="log-stage">{issue.stage}</span>
                 <span className="muted">{issue.detail}</span>
               </div>

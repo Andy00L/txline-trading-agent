@@ -1,4 +1,13 @@
 import { err, ok, type Result } from '@txline-agent/core';
+import {
+  badLength,
+  checkI64,
+  checkSide,
+  checkU16,
+  checkU32,
+  checkU64,
+  type EncodeError,
+} from './int-range.js';
 
 /**
  * Mirror of the on-chain RevealArgs (programs/agent_ledger/src/state.rs). The borsh
@@ -22,13 +31,9 @@ export type RevealArgs = {
 // 32 + 8 + 8 + 2 + 1 + 2 + 4 + 8 + 32 + 32.
 const REVEAL_ARGS_SIZE = 129;
 
-export type EncodeError = { readonly kind: 'bad-length'; readonly field: string; readonly detail: string };
-
-const badLength = (field: string, actual: number): EncodeError => ({
-  kind: 'bad-length',
-  field,
-  detail: `expected 32 bytes, got ${actual}`,
-});
+// EncodeError and the borsh integer range checks live in int-range.js so settle-encode and
+// instruction-data share one source of truth; re-exported here for existing import paths.
+export type { EncodeError } from './int-range.js';
 
 /** Borsh-encode RevealArgs to the exact byte layout the on-chain program hashes. */
 export const encodeRevealArgs = (reveal: RevealArgs): Result<Uint8Array, EncodeError> => {
@@ -40,6 +45,20 @@ export const encodeRevealArgs = (reveal: RevealArgs): Result<Uint8Array, EncodeE
   }
   if (reveal.nonce.length !== 32) {
     return err(badLength('nonce', reveal.nonce.length));
+  }
+  // Range-check every scalar against its on-chain width before writing: DataView wraps an
+  // out-of-range value silently, which would seal a different number than intended and only
+  // surface as a settle revert later. side must be a valid 1X2 outcome (0/1/2).
+  const rangeFailure =
+    checkU64(reveal.index, 'index') ??
+    checkI64(reveal.fixtureId, 'fixtureId') ??
+    checkU16(reveal.market, 'market') ??
+    checkSide(reveal.side, 'side') ??
+    checkU16(reveal.fairProbBps, 'fairProbBps') ??
+    checkU32(reveal.entryOddsMilli, 'entryOddsMilli') ??
+    checkU64(reveal.stake, 'stake');
+  if (rangeFailure !== null) {
+    return err(rangeFailure);
   }
 
   const buffer = new Uint8Array(REVEAL_ARGS_SIZE);

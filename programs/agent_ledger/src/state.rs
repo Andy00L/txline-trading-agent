@@ -47,6 +47,9 @@ pub struct Strategy {
     pub settled_count: u64,
     pub wins: u32,
     pub losses: u32,
+    /// Count of voided decisions (postponed/abandoned within the grace window). In 1X2 there is no
+    /// betting "push": a drawn match is a real win or loss of the staked side (booked in wins/losses
+    /// via won), so this counts voids only, not drawn results. sourceRef: void_decision.
     pub pushes: u32,
     /// Rolling accumulator folded on every commit; binds the full commit history.
     pub commit_log_root: [u8; 32],

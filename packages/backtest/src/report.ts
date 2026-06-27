@@ -1,11 +1,12 @@
-import { MICRO_USD_SCALE } from '@txline-agent/core';
+import { microUsdToFixed2 } from '@txline-agent/core';
 import type { BacktestRun } from './run.js';
 
 // Deterministic formatting: fixed decimals only, no clock-derived text, so the same run
 // always renders the same bytes.
 const asPercent = (value: number): string => `${(value * 100).toFixed(2)}%`;
 const asFixed = (value: number, decimals = 4): string => value.toFixed(decimals);
-const asUsdc = (micro: bigint): string => `${(Number(micro) / Number(MICRO_USD_SCALE)).toFixed(2)} USDC`;
+// Exact integer-to-fixed formatting (no Number(bigint) float path). sourceRef: core units.ts.
+const asUsdc = (micro: bigint): string => `${microUsdToFixed2(micro)} USDC`;
 
 /**
  * Render the backtest metrics as a deterministic markdown report. The same BacktestRun
@@ -35,6 +36,7 @@ export const renderMarkdownReport = (run: BacktestRun): string => {
     '| --- | --- |',
     `| Mean CLV (probability) | ${asFixed(metrics.meanClvProb)} |`,
     `| CLV-positive rate | ${asPercent(metrics.clvPositiveRate)} |`,
+    `| CLV samples | ${metrics.clvSamples} of ${metrics.bets} |`,
     `| Mean implied probability | ${asFixed(metrics.meanImpliedProb)} |`,
     '',
     '## Calibration',

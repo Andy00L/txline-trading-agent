@@ -32,6 +32,10 @@ export type SettledPosition = {
   /** The last consensus fair probability for the backed outcome, the closing-line
    * input for Closing Line Value. */
   readonly closingFairProb: Prob;
+  /** False when no consensus observation arrived after entry, so closingFairProb fell back
+   * to the entry prob and the Closing Line Value for this bet is unknown (the backtest
+   * excludes it from CLV averages) rather than a true zero. */
+  readonly closingFairProbKnown: boolean;
 };
 
 export interface PipelineSink {

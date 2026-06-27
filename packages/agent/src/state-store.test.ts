@@ -63,6 +63,39 @@ describe('AgentStateStore', () => {
     expect(snapshot.bankrollMicroUsd).toBe('1001000000');
   });
 
+  it('records an error and does not move the bankroll on a settle for an unknown index', () => {
+    const store = new AgentStateStore({ clock: new FixedClock(), startingBankroll: 1_000_000_000n });
+    store.markSettled(99, settleView(99, true, '26000000'));
+    const snapshot = store.snapshot();
+    expect(snapshot.settlesCount).toBe(0);
+    expect(snapshot.errorsCount).toBe(1);
+    expect(snapshot.bankrollMicroUsd).toBe('1000000000');
+  });
+
+  it('redacts a secret RPC URL from a recorded error', () => {
+    const store = new AgentStateStore({ clock: new FixedClock(), startingBankroll: 0n });
+    store.recordError('commit', 'rpc failed: https://devnet.helius-rpc.com/?api-key=topsecret');
+    const snapshot = store.snapshot();
+    expect(snapshot.recentErrors[0]?.detail).not.toContain('topsecret');
+    expect(snapshot.recentErrors[0]?.detail).toContain('[redacted]');
+  });
+
+  it('drops a throwing subscriber without aborting the update or other subscribers', () => {
+    const store = new AgentStateStore({ clock: new FixedClock(), startingBankroll: 0n });
+    let goodSeen = 0;
+    store.subscribe(() => {
+      throw new Error('subscriber blew up');
+    });
+    store.subscribe(() => {
+      goodSeen += 1;
+    });
+    expect(() => store.recordEvent()).not.toThrow();
+    expect(goodSeen).toBe(1);
+    // The throwing subscriber was dropped, so the next update only reaches the good one.
+    store.recordEvent();
+    expect(goodSeen).toBe(2);
+  });
+
   it('counts events and stamps feed status with the injected clock', () => {
     const clock = new FixedClock();
     const store = new AgentStateStore({ clock, startingBankroll: 0n });

@@ -37,4 +37,30 @@ describe('encodeRevealArgs', () => {
       expect(result.error.field).toBe('nonce');
     }
   });
+
+  it('rejects an out-of-range side instead of silently masking it', () => {
+    const result = encodeRevealArgs({ ...canonical, side: 3 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('bad-range');
+      expect(result.error.field).toBe('side');
+    }
+  });
+
+  it('rejects a u16 field above its width instead of wrapping', () => {
+    const result = encodeRevealArgs({ ...canonical, market: 0x1_0000 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('bad-range');
+      expect(result.error.field).toBe('market');
+    }
+  });
+
+  it('rejects a negative u64 stake', () => {
+    const result = encodeRevealArgs({ ...canonical, stake: -1n });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.field).toBe('stake');
+    }
+  });
 });

@@ -4,7 +4,7 @@ import { TxlineClient, type TxlineClientDeps } from '../http/client.js';
 import type { HttpClient, HttpRequest, HttpResponse } from '../http/types.js';
 import type { OddsPayload } from '../schemas/odds.js';
 import type { ScoresPayload } from '../schemas/scores.js';
-import { LiveSseFeed, type SseConnector, type TaggedFrame } from './live.js';
+import { LiveSseFeed, type SseConnector, type SseResumeIds, type TaggedFrame } from './live.js';
 import { ReplayFeed } from './replay.js';
 import { RecordedReplaySource, type IntervalCoord } from './source.js';
 
@@ -52,7 +52,7 @@ const liveFrames: TaggedFrame[] = [
 ];
 
 class OnceConnector implements SseConnector {
-  async *connect(_lastEventId: string | null): AsyncIterable<TaggedFrame> {
+  async *connect(_resume: SseResumeIds): AsyncIterable<TaggedFrame> {
     for (const frame of liveFrames) {
       yield frame;
     }

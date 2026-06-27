@@ -1,4 +1,4 @@
-import type { SseChannel, SseConnector, TaggedFrame } from '../feed/live.js';
+import type { SseChannel, SseConnector, SseResumeIds, TaggedFrame } from '../feed/live.js';
 import { SseFrameParser } from '../feed/sse-parse.js';
 
 /**
@@ -89,16 +89,15 @@ export class FetchSseConnector implements SseConnector {
       'X-Api-Token': this.auth.apiToken,
     };
     if (lastEventId !== null) {
-      // The two channels have independent id spaces, so this is a best-effort resume; the
-      // REST gap-backfill on reconnect is the real safety net for missed events.
+      // Resume this channel from its own last id (the two channels have independent id spaces,
+      // tracked per channel by LiveSseFeed); the REST gap-backfill remains the safety net.
       headers['Last-Event-ID'] = lastEventId;
     }
     return headers;
   }
 
-  async *connect(lastEventId: string | null): AsyncIterable<TaggedFrame> {
+  async *connect(resume: SseResumeIds): AsyncIterable<TaggedFrame> {
     const controller = new AbortController();
-    const headers = this.headers(lastEventId);
     const queue: TaggedFrame[] = [];
     let wake: (() => void) | null = null;
     let finishedPumps = 0;
@@ -112,9 +111,12 @@ export class FetchSseConnector implements SseConnector {
       }
     };
 
-    const pump = async (channel: SseChannel, url: string): Promise<void> => {
+    const pump = async (channel: SseChannel, url: string, lastEventId: string | null): Promise<void> => {
       try {
-        const response = await this.fetchImpl(url, { headers, signal: controller.signal });
+        const response = await this.fetchImpl(url, {
+          headers: this.headers(lastEventId),
+          signal: controller.signal,
+        });
         if (!response.ok || response.body === null) {
           throw new Error(`[FetchSseConnector] ${channel} stream HTTP ${response.status}`);
         }
@@ -140,8 +142,8 @@ export class FetchSseConnector implements SseConnector {
     };
 
     const pumps = [
-      pump('odds', `${this.dataBaseUrl}/api/odds/stream`),
-      pump('scores', `${this.dataBaseUrl}/api/scores/stream`),
+      pump('odds', `${this.dataBaseUrl}/api/odds/stream`, resume.odds),
+      pump('scores', `${this.dataBaseUrl}/api/scores/stream`, resume.scores),
     ];
 
     try {

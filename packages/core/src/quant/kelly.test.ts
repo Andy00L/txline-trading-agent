@@ -82,4 +82,20 @@ describe('kellyStake', () => {
       maxFractionOfBankroll: 1.5,
     }).ok).toBe(false);
   });
+
+  it('stakes 0 at a boundary probability of 1 (untrustworthy certainty, not a max bet)', () => {
+    const stake = kellyStake(probOf(1), oddsOf(2000), bankrollOf(1000), halfKelly);
+    expect(stake.ok).toBe(true);
+    if (stake.ok) {
+      expect(stake.value).toBe(0n);
+    }
+  });
+
+  it('stakes 0 at a boundary probability of 0', () => {
+    const stake = kellyStake(probOf(0), oddsOf(2000), bankrollOf(1000), halfKelly);
+    expect(stake.ok).toBe(true);
+    if (stake.ok) {
+      expect(stake.value).toBe(0n);
+    }
+  });
 });

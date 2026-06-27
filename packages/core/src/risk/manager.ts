@@ -61,7 +61,10 @@ export const evaluate = (
   if (state.dayStartBankroll - state.bankroll > config.maxDailyDrawdown) {
     return { allowed: false, reason: 'daily-drawdown' };
   }
-  if (input.nowMs - input.feedTsMs > config.staleFeedMs) {
+  // Stale in either direction: a feed timestamp far in the past is stale, and one far in
+  // the FUTURE (clock skew, malformed or replayed frame) is equally untrustworthy. Using
+  // the absolute gap stops a future-dated feedTs from slipping past the breaker as fresh.
+  if (Math.abs(input.nowMs - input.feedTsMs) > config.staleFeedMs) {
     return { allowed: false, reason: 'stale-feed' };
   }
   const offeredProb = decimalOddsMilliToProb(input.offeredOddsMilli);

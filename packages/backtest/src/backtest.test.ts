@@ -154,6 +154,21 @@ describe('runBacktest', () => {
     expect(metrics.calibration).not.toBeNull();
   });
 
+  it('excludes a bet with no post-entry closing line from CLV (B4)', async () => {
+    // Take only the first odds snapshot and the final score for a fixture: the decision commits
+    // on that only snapshot, so no later consensus observation exists and CLV is unknown.
+    const events = fixtureEvents(17588302, 0, 1_000, true);
+    const firstOdds = events[0];
+    const finalScore = events[3];
+    expect(firstOdds).toBeDefined();
+    expect(finalScore).toBeDefined();
+    if (firstOdds && finalScore) {
+      const run = await runBacktest(new ArrayFeed([firstOdds, finalScore]), config);
+      expect(run.metrics.bets).toBe(1);
+      expect(run.metrics.clvSamples).toBe(0);
+    }
+  });
+
   it('renders a deterministic markdown report', async () => {
     const first = renderMarkdownReport(await runBacktest(new ArrayFeed(scenario()), config));
     const second = renderMarkdownReport(await runBacktest(new ArrayFeed(scenario()), config));

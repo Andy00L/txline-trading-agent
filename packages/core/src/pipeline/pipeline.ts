@@ -49,6 +49,9 @@ type ScoreState = {
   readonly awayGoals: number;
   readonly tsMs: number;
   readonly seq: number;
+  /** The game-state string this score carried (e.g. 'H2', 'F'); drives the final-whistle
+   * settlement trigger and the final-is-sticky precedence in handleScore. */
+  readonly gameState: string;
 };
 
 type OpenPosition = { readonly index: number; readonly decision: Decision; readonly committedAtMs: number };
@@ -201,9 +204,35 @@ const handleOdds = async (
   return 0;
 };
 
-/** Track the latest fully-scored update per fixture; a final-whistle one settles the bets. */
+/**
+ * Whether an incoming score supersedes the one already tracked for a fixture. A final game
+ * state always supersedes a non-final one and is never replaced by a non-final one (the
+ * final result is sticky, A-9); among scores of the same finality a strictly higher seq
+ * wins, so an out-of-order or duplicate lower-seq frame is dropped.
+ * sourceRef: docs/research/M0-recon-findings.md O9 (final game states).
+ */
+const shouldReplaceScore = (existing: ScoreState, incoming: ScoreUpdate): boolean => {
+  const existingFinal = isFinalGameState(existing.gameState);
+  const incomingFinal = isFinalGameState(incoming.gameState);
+  if (existingFinal !== incomingFinal) {
+    return incomingFinal;
+  }
+  return incoming.seq > existing.seq;
+};
+
+/**
+ * Track the score a fixture's bets will settle against, with a defined precedence so an
+ * out-of-order, duplicate, or post-final correction frame cannot corrupt it: a final whistle
+ * is sticky and a strictly higher seq wins among same-finality updates. The chosen seq is
+ * recorded as settledSeq, the exact seq the on-chain proof is fetched for, so it must be the
+ * true final one.
+ */
 const handleScore = (state: PipelineState, score: ScoreUpdate): void => {
   if (score.homeGoals === null || score.awayGoals === null) {
+    return;
+  }
+  const existing = state.scores.get(score.fixtureId);
+  if (existing !== undefined && !shouldReplaceScore(existing, score)) {
     return;
   }
   state.scores.set(score.fixtureId, {
@@ -211,6 +240,7 @@ const handleScore = (state: PipelineState, score: ScoreUpdate): void => {
     awayGoals: score.awayGoals,
     tsMs: score.tsMs,
     seq: score.seq,
+    gameState: score.gameState,
   });
 };
 
@@ -238,9 +268,24 @@ const settlePosition = async (
     fixtureId: position.decision.fixtureId,
     marketKey: position.decision.marketKey,
   });
+  // Closing line value uses the most recent consensus fair probability BY TIMESTAMP for the
+  // backed outcome (robust to out-of-order arrival). When no observation arrived after the
+  // entry, the closing line is unknown: fall back to the entry prob and flag it not-known,
+  // so the backtest can exclude it from CLV rather than count a false zero.
+  const outcomeHistory =
+    state.markets.get(position.decision.marketKey)?.history.get(position.decision.outcome) ?? [];
+  let latestObservation: ProbObservation | undefined;
+  for (const observation of outcomeHistory) {
+    if (latestObservation === undefined || observation.tsMs > latestObservation.tsMs) {
+      latestObservation = observation;
+    }
+  }
+  const hasClosingLine =
+    latestObservation !== undefined && latestObservation.tsMs > position.decision.tsMs;
   const closingFairProb =
-    state.markets.get(position.decision.marketKey)?.lastFairProb.get(position.decision.outcome) ??
-    position.decision.fairProb;
+    hasClosingLine && latestObservation !== undefined
+      ? latestObservation.fairProb
+      : position.decision.fairProb;
   state.settled.add(position.index);
   const settledPosition: SettledPosition = {
     index: position.index,
@@ -251,6 +296,7 @@ const settlePosition = async (
     settledAtMs: score.tsMs,
     settledSeq: score.seq,
     closingFairProb,
+    closingFairProbKnown: hasClosingLine,
   };
   await sink.onSettle(settledPosition);
   return true;
@@ -267,7 +313,10 @@ const settleFinalFixture = async (
   sink: PipelineSink,
 ): Promise<void> => {
   const score = state.scores.get(fixtureId);
-  if (!score) {
+  // Only ever settle against a final-whistle score. handleScore keeps a final score sticky,
+  // so the tracked score here is the final one; this guard makes that invariant explicit and
+  // robust if the tracking policy ever changes.
+  if (score === undefined || !isFinalGameState(score.gameState)) {
     return;
   }
   for (const position of state.open) {
@@ -278,14 +327,16 @@ const settleFinalFixture = async (
 };
 
 /**
- * End-of-feed sweep: settle any position not already settled by a final whistle against the
- * last tracked score for its fixture. Covers a replay window that ends before the final
- * whistle, so a green backtest still settles every bet it has a score for.
+ * End-of-feed sweep: settle any position not already settled by a final whistle against its
+ * fixture's FINAL score. Covers a replay window that ends after the final whistle. A fixture
+ * that never reached a final state (feed cut off, abandoned match) is left open and
+ * unrealized, never settled against an in-running snapshot, so a backtest never books a result
+ * for a match that did not actually end. sourceRef: A-9.
  */
 const settleAll = async (state: PipelineState, sink: PipelineSink): Promise<void> => {
   for (const position of state.open) {
     const score = state.scores.get(position.decision.fixtureId);
-    if (score) {
+    if (score !== undefined && isFinalGameState(score.gameState)) {
       await settlePosition(state, position, score, sink);
     }
   }

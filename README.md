@@ -1,6 +1,10 @@
-# TxLINE autonomous odds-trading agent
+# 🤖 TxLINE autonomous odds-trading agent
+
+![Tests](https://img.shields.io/badge/tests-250%20passing-1F8A5B) ![Solana](https://img.shields.io/badge/Solana-devnet-2B5FD9) ![Mode](https://img.shields.io/badge/mode-paper%20trading-6B7280) ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6) ![Anchor](https://img.shields.io/badge/Anchor-0.31-512BD4)
 
 ![TxLINE agent operator dashboard: live feed status, the ingest to settle pipeline, and the committed and settled position ledger with on-chain Verified on Solana stamps](docs/assets/dashboard.png)
+
+> The operator console: live feed status, the ingest-to-settle pipeline, and the position ledger with on-chain "Verified on Solana" stamps.
 
 An autonomous, deterministic agent that ingests the live TxLINE World Cup feed (odds and
 scores, Merkle-anchored on Solana), trades a consensus steam / divergence strategy, and keeps a
@@ -11,7 +15,7 @@ when the oracle-attested score matches the sealed claim.
 Submission for the TxODDS "Trading Tools and Agents" World Cup hackathon (Superteam Earn). Devnet
 and paper trading only; it places no real-money wagers.
 
-## Why this is different
+## 🎯 Why this is different
 
 Most entries print signals. The hard problem the sponsor named is that **matches finish after the
 deadline, so there is no live activity at judging time** and any claimed track record can be
@@ -24,16 +28,22 @@ cherry-picked. This agent answers that with a verifiable chain rather than a scr
    satisfies the sealed claim; the program writes PnL only if the proof passes. A bad proof, a
    wrong fixture, or a tampered stat reverts the whole settle.
 
+![Trust chain: ingest the live feed, verify inputs against the on-chain Merkle roots, commit a keccak hash before kickoff, settle by CPI into the TxLINE oracle, and write PnL only when the proof passes](docs/assets/trust-chain.svg)
+
 The same code path runs live and in replay, so the walk-forward backtest is direct evidence about
 live behaviour, not a separate script.
 
-## Status
+## 📊 Status
 
-M0-M8 complete. **196 TypeScript tests + 9 Rust tests, all green.** The `agent_ledger` program is
-deployed and the full trust chain is proven on devnet (commit before reveal, CPI-settle, and four
-rejection cases: tampered root, mismatched fixture, swapped stats). A security audit
-([docs/audit/M8-audit.md](docs/audit/M8-audit.md)) closed two critical settlement trust gaps,
-which are fixed, deployed, and re-proven on-chain.
+M0-M9 complete, followed by a full review-and-harden pass. **240 TypeScript tests + 10 Rust tests
+(250 total), all green**, with `typecheck`, `lint`, a coding-standards gate, and a core-purity gate
+all passing. The `agent_ledger` program is deployed and the full trust chain is proven on devnet
+(commit before reveal, CPI-settle, and three rejection cases: tampered root, mismatched fixture,
+swapped stats). A security audit ([docs/audit/M8-audit.md](docs/audit/M8-audit.md)) closed two
+critical settlement trust gaps, which are fixed, deployed, and re-proven on-chain; the later
+hardening pass added defense-in-depth (a sealed-side guard, a checked epoch-day derivation,
+secret redaction on error paths, and settlement seq-ordering integrity) and broader edge-case
+tests.
 
 | Devnet artifact | Address |
 | --- | --- |
@@ -41,10 +51,12 @@ which are fixed, deployed, and re-proven on-chain.
 | TxLINE `txoracle` (CPI target) | `6pW64gN1s2uqjHkn1unFeEjAwJkPGHoppGvS715wyP2J` |
 | Strategy authority wallet | `8SafovV7444FGu3fGUJDWiqkrwsLpamsCH7buQyjKe5P` |
 
-## Architecture
+## 🏗️ Architecture
 
 A TypeScript monorepo (pnpm + Turborepo) plus an Anchor 0.31.1 Solana program. Strict layering,
 enforced by ESLint and a CI grep: `core` depends on nothing and does no IO.
+
+![Architecture: dashboard reads the api, the api projects agent state, the agent drives runPipeline over txline and onchain-client on top of a pure core, the Anchor agent_ledger program is the on-chain settle target, and the replay backtest shares the same code path](docs/assets/architecture.svg)
 
 ```
 core           pure quant + domain + decision logic (de-vig, Kelly, steam, CLV, calibration)
@@ -61,7 +73,7 @@ Design tenets: one code path for live and replay; full determinism (injected `Cl
 PRNG, no `Date.now()` / `Math.random()` in decision code); zod at every ingress; errors as values;
 money as integers (`MicroUsd = bigint`, odds x1000).
 
-## Quickstart (for judges)
+## ⚡ Quickstart (for judges)
 
 Prerequisites: Node >= 22, pnpm 11, and (for the live agent and the on-chain proof) a `.env` with
 the TxLINE token and a devnet wallet; see [docs/runbooks/M6-agent.md](docs/runbooks/M6-agent.md)
@@ -69,7 +81,7 @@ and [docs/runbooks/M4-devnet.md](docs/runbooks/M4-devnet.md).
 
 ```bash
 pnpm install
-pnpm verify            # typecheck + 196 tests + lint + standards + core-purity, all green
+pnpm verify            # typecheck + 240 tests + lint + standards + core-purity, all green
 ```
 
 Run the backtest on a captured World Cup window (the proof centerpiece; needs the TxLINE token):
@@ -102,7 +114,7 @@ mismatched fixture, and swapped stats):
 pnpm --filter @txline-agent/devnet-tools settle:e2e
 ```
 
-## The strategy
+## 📈 The strategy
 
 TxLINE serves a single de-margined consensus price (`TXLineStablePriceDemargined`, booksum ~ 1),
 so a naive Kelly +EV bet sizes to zero: the tradeable edge is **Closing Line Value**, beating the
@@ -113,9 +125,10 @@ walk-forward split. The strategy is deterministic and the math is in `core` with
 Honest result from one captured window (epoch day 20629, hours 17-23): 8 settled bets, 3W/5L,
 ROI +27.82% but variance-driven by long-odds upsets, mean CLV -0.0424. The deliverable is the
 **methodology and the verifiable harness**, not a cherry-picked number; a single window does not
-establish an edge, and the report says so.
+establish an edge, and the report says so (Closing Line Value is reported only over bets that had
+a known closing line).
 
-## On-chain program
+## 🔗 On-chain program
 
 `agent_ledger` (paper trading only, no real funds). One `Strategy` ledger per agent; one
 `DecisionCommit` per decision. `settle_decision` recomputes the keccak commit hash, derives the
@@ -124,15 +137,17 @@ establish an edge, and the report says so.
 keys, so a settle cannot substitute a fixture or swap stats to fabricate a result. Verification
 type details and the trust model are in [docs/submission/TECHNICAL.md](docs/submission/TECHNICAL.md).
 
-## Submission
+## 📦 Submission
 
 - Demo video script: [docs/submission/DEMO-SCRIPT.md](docs/submission/DEMO-SCRIPT.md)
 - Technical documentation and TxLINE API feedback: [docs/submission/TECHNICAL.md](docs/submission/TECHNICAL.md)
 - Security audit: [docs/audit/M8-audit.md](docs/audit/M8-audit.md)
 - Build plan and milestones: [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md)
 
-## Security and compliance
+## 🔒 Security and compliance
 
 Devnet and paper trading only; no real-money wagering. Secrets come from env, are never logged or
-committed, and the `.env` and keypair files are gitignored. The repository follows a strict coding
-standard and a security-audit procedure (the full audit ran at M8).
+committed (RPC errors are redacted before they reach logs or the public state endpoint), and the
+`.env` and keypair files are gitignored. The repository follows a strict coding standard and a
+security-audit procedure (the full audit ran at M8, with a follow-up review-and-harden pass over
+every package).

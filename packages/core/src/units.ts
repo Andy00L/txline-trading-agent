@@ -102,6 +102,10 @@ export const probToDecimalOddsMilli = (probability: Prob): Result<DecimalOddsMil
   return decimalOddsMilli(Math.round(ODDS_MILLI_SCALE / probability));
 };
 
+/** The TxLINE Pct numeric format: an integer part, a dot, exactly three decimals (e.g. "52.632").
+ * sourceRef: OpenAPI OddsPayload.Pct pattern. Shared with the odds zod schema (schemas/odds.ts). */
+export const PCT_NUMBER_PATTERN = /^\d+\.\d{3}$/;
+
 /**
  * Parse a TxLINE Pct field to a Prob, or null for "NA". The field is a percentage
  * with exactly three decimals, for example "52.632" meaning 52.632 percent.
@@ -111,7 +115,7 @@ export const pctStringToProb = (pct: string): Result<Prob | null, UnitError> => 
   if (pct === 'NA') {
     return ok(null);
   }
-  if (!/^\d+\.\d{3}$/.test(pct)) {
+  if (!PCT_NUMBER_PATTERN.test(pct)) {
     return err(unitError('malformed', 'Pct', pct));
   }
   return prob(Number(pct) / 100);
@@ -123,3 +127,15 @@ export const probToBps = (probability: Prob): Bps => Math.round(probability * BP
 /** Format decimal-odds-milli for display or logs, for example 2000 -> "2.000". */
 export const decimalOddsMilliToString = (oddsMilli: DecimalOddsMilli): string =>
   (oddsMilli / ODDS_MILLI_SCALE).toFixed(3);
+
+/** Format integer micro-USD as a fixed two-decimal string with no floating point, for example
+ * 1_500_000n -> "1.50" and -25_000_000n -> "-25.00". Truncates toward zero past the cent. For
+ * display and reports; the money math itself stays integer (Number(bigint) loses precision above
+ * 2^53 micro-USD, about 9e9 USD, which this avoids). */
+export const microUsdToFixed2 = (micro: bigint): string => {
+  const negative = micro < 0n;
+  const abs = negative ? -micro : micro;
+  const whole = abs / MICRO_USD_SCALE;
+  const cents = (abs % MICRO_USD_SCALE) / 10_000n;
+  return `${negative ? '-' : ''}${whole.toString()}.${cents.toString().padStart(2, '0')}`;
+};

@@ -1,4 +1,4 @@
-import { MICRO_USD_SCALE } from '@txline-agent/core';
+import { microUsdToFixed2 } from '@txline-agent/core';
 import type { CalibrationReport, EquityPoint } from './metrics.js';
 import type { BacktestRun } from './run.js';
 
@@ -10,8 +10,8 @@ const MUTED = '#6B7280';
 
 const asPercent = (value: number): string => `${(value * 100).toFixed(2)}%`;
 const asFixed = (value: number, decimals = 4): string => value.toFixed(decimals);
-const asUsdc = (micro: bigint): string =>
-  `${(Number(micro) / Number(MICRO_USD_SCALE)).toFixed(2)} USDC`;
+// Exact integer-to-fixed formatting (no Number(bigint) float path). sourceRef: core units.ts.
+const asUsdc = (micro: bigint): string => `${microUsdToFixed2(micro)} USDC`;
 const escapeText = (value: string): string =>
   value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -83,6 +83,7 @@ const summaryRows = (run: BacktestRun): string => {
     ['Max drawdown', asUsdc(metrics.maxDrawdown)],
     ['Mean CLV (probability)', asFixed(metrics.meanClvProb)],
     ['CLV-positive rate', asPercent(metrics.clvPositiveRate)],
+    ['CLV samples', `${metrics.clvSamples} of ${metrics.bets}`],
   ];
   return rows
     .map(([label, value]) => `<tr><td>${escapeText(label)}</td><td>${escapeText(value)}</td></tr>`)

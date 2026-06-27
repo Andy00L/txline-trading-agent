@@ -41,9 +41,15 @@ pub fn apply_pnl(bankroll: u64, pnl: i64) -> Option<u64> {
     }
 }
 
-/// The 2-byte little-endian epoch day used in the daily scores roots PDA seed.
-pub fn epoch_day_le(ts_ms: i64) -> [u8; 2] {
-    ((ts_ms / 86_400_000) as u16).to_le_bytes()
+/// The 2-byte little-endian epoch day used in the daily scores roots PDA seed, or None when the
+/// timestamp is negative or maps to a day outside u16. A caller-controlled ts must not silently
+/// wrap via `as` and alias a different day's roots PDA. sourceRef: M0-recon-findings.md (PDA seed).
+pub fn epoch_day_le(ts_ms: i64) -> Option<[u8; 2]> {
+    if ts_ms < 0 {
+        return None;
+    }
+    let day = ts_ms / 86_400_000;
+    u16::try_from(day).ok().map(|day_u16| day_u16.to_le_bytes())
 }
 
 #[cfg(test)]
@@ -100,7 +106,13 @@ mod tests {
 
     #[test]
     fn epoch_day_is_two_byte_le() {
-        assert_eq!(epoch_day_le(1_750_000_000_000), 20254u16.to_le_bytes());
+        assert_eq!(epoch_day_le(1_750_000_000_000), Some(20254u16.to_le_bytes()));
+    }
+
+    #[test]
+    fn epoch_day_rejects_out_of_range_timestamps() {
+        assert_eq!(epoch_day_le(-1), None);
+        assert_eq!(epoch_day_le(i64::MAX), None);
     }
 
     // Canonical reveal used as the cross-language golden. The onchain-client TS

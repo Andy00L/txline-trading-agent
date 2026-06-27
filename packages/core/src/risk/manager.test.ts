@@ -86,6 +86,15 @@ describe('evaluate', () => {
     });
   });
 
+  it('blocks a future-dated feed (clock skew) as stale', () => {
+    // feedTsMs ahead of nowMs by more than staleFeedMs: the raw gap is negative and used to slip
+    // past the breaker as fresh. The absolute gap must still flag it stale.
+    expect(evaluate(freshState(), baseInput({ feedTsMs: 20_000, nowMs: 10_000 }), config)).toEqual({
+      allowed: false,
+      reason: 'stale-feed',
+    });
+  });
+
   it('blocks outlier odds when dispersion is known', () => {
     const verdict = evaluate(
       freshState(),
@@ -163,5 +172,18 @@ describe('state transitions', () => {
     expect(settled.bankroll).toBe(micro(1020));
     expect(settled.totalExposure).toBe(micro(0));
     expect(settled.openCount).toBe(0);
+  });
+
+  it('drives the bankroll down and releases exposure on a settled loss', () => {
+    const committed = onCommit(freshState(), { stake: micro(20), fixtureId: 1, marketKey: MARKET });
+    const lost = onSettlement(committed, {
+      stake: micro(20),
+      pnl: -20_000_000n,
+      fixtureId: 1,
+      marketKey: MARKET,
+    });
+    expect(lost.bankroll).toBe(micro(980));
+    expect(lost.totalExposure).toBe(micro(0));
+    expect(lost.openCount).toBe(0);
   });
 });

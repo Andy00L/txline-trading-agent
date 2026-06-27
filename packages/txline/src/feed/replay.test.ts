@@ -99,4 +99,14 @@ describe('ReplayFeed', () => {
     expect(result.gapsDetected).toBe(1);
     expect(result.eventsEmitted).toBe(0);
   });
+
+  it('deduplicates a repeated record so replay matches the live feed (C6)', async () => {
+    const duplicate = oddsRaw(17588227, 1000, [2100, 3400, 3600]);
+    const source = new RecordedReplaySource(
+      new Map([[INTERVAL_KEY, [duplicate, duplicate]]]),
+      new Map([[INTERVAL_KEY, []]]),
+    );
+    const events = await collect(new ReplayFeed({ source, clock: new ManualClock(0), intervals }));
+    expect(events.filter((event) => event.kind === 'odds')).toHaveLength(1);
+  });
 });

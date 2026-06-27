@@ -127,6 +127,8 @@ export class OnChainSink implements PipelineSink {
       this.fail('commit', position.index, `commit ${receipt.error.kind}: ${receipt.error.detail}`);
       return;
     }
+    // receipt.value.index === onChainIndex here: the port rejects a commit whose reveal.index
+    // does not match the on-chain decisions_count, so the sealed reveal and stored index agree.
     this.committed.set(position.index, { reveal: reveal.value, onChainIndex: receipt.value.index });
     this.store.recordCommit({
       index: position.index,

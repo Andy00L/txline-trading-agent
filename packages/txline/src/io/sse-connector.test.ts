@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { TaggedFrame } from '../feed/live.js';
+import type { SseResumeIds, TaggedFrame } from '../feed/live.js';
 import { FetchSseConnector, type FetchLike, type SseFetchResponse } from './sse-connector.js';
 
 const encoder = new TextEncoder();
@@ -16,12 +16,14 @@ const streaming = (chunks: readonly string[]): SseFetchResponse => ({
   body: bytesOf(chunks),
 });
 
+const NO_RESUME: SseResumeIds = { odds: null, scores: null };
+
 const collect = async (
   connector: FetchSseConnector,
-  lastEventId: string | null = null,
+  resume: SseResumeIds = NO_RESUME,
 ): Promise<TaggedFrame[]> => {
   const frames: TaggedFrame[] = [];
-  for await (const tagged of connector.connect(lastEventId)) {
+  for await (const tagged of connector.connect(resume)) {
     frames.push(tagged);
   }
   return frames;
@@ -74,7 +76,7 @@ describe('FetchSseConnector', () => {
       fetchImpl,
     });
 
-    await collect(connector, 'evt-42');
+    await collect(connector, { odds: 'evt-42', scores: 'evt-42' });
 
     expect(captured['Authorization']).toBe('Bearer J');
     expect(captured['X-Api-Token']).toBe('T');
@@ -94,9 +96,28 @@ describe('FetchSseConnector', () => {
       fetchImpl,
     });
 
-    await collect(connector, null);
+    await collect(connector);
 
     expect('Last-Event-ID' in captured).toBe(false);
+  });
+
+  it('resumes each channel from its own last id (C3)', async () => {
+    const seen: Record<string, string | undefined> = {};
+    const fetchImpl: FetchLike = async (url, init) => {
+      const channel = url.endsWith('/api/odds/stream') ? 'odds' : 'scores';
+      seen[channel] = init.headers['Last-Event-ID'];
+      return streaming([]);
+    };
+    const connector = new FetchSseConnector({
+      dataBaseUrl: 'https://d',
+      auth: { jwt: 'J', apiToken: 'T' },
+      fetchImpl,
+    });
+
+    await collect(connector, { odds: 'odds-7', scores: 'scores-9' });
+
+    expect(seen['odds']).toBe('odds-7');
+    expect(seen['scores']).toBe('scores-9');
   });
 
   it('throws when a stream returns a non-2xx status, so the feed reconnects', async () => {

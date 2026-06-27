@@ -85,6 +85,7 @@ const settledPosition = (result: Outcome): SettledPosition => ({
   settledAtMs: 2_000,
   settledSeq: 412,
   closingFairProb: probOf(0.52),
+  closingFairProbKnown: true,
 });
 
 const makeStrategy = (decisionsCount: bigint): StrategyAccount => ({

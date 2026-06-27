@@ -161,6 +161,12 @@ export const buildSettleArgs = (input: {
     [validation.summary.updateStats.updateCount, 'summary.updateStats.updateCount'],
     [validation.summary.updateStats.minTimestamp, 'summary.updateStats.minTimestamp'],
     [validation.summary.updateStats.maxTimestamp, 'summary.updateStats.maxTimestamp'],
+    [validation.statToProve.key, 'statToProve.key'],
+    [validation.statToProve.value, 'statToProve.value'],
+    [validation.statToProve.period, 'statToProve.period'],
+    [validation.statToProve2.key, 'statToProve2.key'],
+    [validation.statToProve2.value, 'statToProve2.value'],
+    [validation.statToProve2.period, 'statToProve2.period'],
   ]);
   if (badInteger) {
     return err(badInteger);

@@ -25,10 +25,23 @@ const impliedFromLines = (
   return { implied, booksum };
 };
 
+/** Reject a book that cannot be de-vigged: no lines at all, or a single line (a lone
+ * outcome normalizes to probability 1.0, which is meaningless and would size a full stake). */
+const validateBookShape = (lines: readonly OddsLine[]): QuantError | null => {
+  if (lines.length === 0) {
+    return { kind: 'empty-market' };
+  }
+  if (lines.length < 2) {
+    return { kind: 'degenerate-book', detail: 'single-line book' };
+  }
+  return null;
+};
+
 /** Multiplicative (proportional normalization) de-vig: p_i = r_i / booksum. */
 export const devigMultiplicative = (lines: readonly OddsLine[]): Result<FairBook, QuantError> => {
-  if (lines.length === 0) {
-    return err({ kind: 'empty-market' });
+  const shapeError = validateBookShape(lines);
+  if (shapeError !== null) {
+    return err(shapeError);
   }
   const { implied, booksum } = impliedFromLines(lines);
   if (!(booksum > 0)) {
@@ -62,8 +75,9 @@ const shinSum = (
  * fair probabilities sum to 1. sourceRef: docs/research/quant-methods.md item 2.
  */
 export const devigShin = (lines: readonly OddsLine[]): Result<FairBook, QuantError> => {
-  if (lines.length === 0) {
-    return err({ kind: 'empty-market' });
+  const shapeError = validateBookShape(lines);
+  if (shapeError !== null) {
+    return err(shapeError);
   }
   const { implied, booksum } = impliedFromLines(lines);
   if (!(booksum > 0)) {

@@ -9,6 +9,7 @@ import {
 import { mapOddsPayload } from '../map/odds.js';
 import { mapScorePayload } from '../map/score.js';
 import type { IntervalCoord, ReplaySource } from './source.js';
+import { IdempotencyTracker } from './idempotency.js';
 
 export type ReplayFeedDeps = {
   readonly source: ReplaySource;
@@ -55,6 +56,10 @@ export class ReplayFeed implements Feed {
 
   async *events(): AsyncIterable<FeedEvent> {
     const pending: Pending[] = [];
+    // Dedup by the same keys as the live feed (odds MessageId, scores fixtureId+seq), so a
+    // recorded window containing a duplicate replays identically to live, preserving the
+    // one-code-path guarantee for duplicate-containing inputs. sourceRef: feed/live.ts.
+    const idempotency = new IdempotencyTracker();
     let order = 0;
     let gaps = 0;
 
@@ -62,6 +67,9 @@ export class ReplayFeed implements Feed {
       const oddsResult = await this.deps.source.oddsInterval(coord);
       if (oddsResult.ok) {
         for (const raw of oddsResult.value) {
+          if (!idempotency.acceptOdds(raw.MessageId)) {
+            continue;
+          }
           const mapped = mapOddsPayload(raw);
           if (mapped.ok) {
             pending.push({ channelRank: 0, tsMs: mapped.value.tsMs, order, payload: mapped.value });
@@ -75,6 +83,9 @@ export class ReplayFeed implements Feed {
       const scoresResult = await this.deps.source.scoresInterval(coord);
       if (scoresResult.ok) {
         for (const raw of scoresResult.value) {
+          if (!idempotency.acceptScore(raw.FixtureId, raw.Seq)) {
+            continue;
+          }
           const mapped = mapScorePayload(raw);
           if (mapped.ok) {
             pending.push({ channelRank: 1, tsMs: mapped.value.tsMs, order, payload: mapped.value });

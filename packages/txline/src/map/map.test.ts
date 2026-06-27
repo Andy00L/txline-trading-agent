@@ -135,6 +135,18 @@ describe('mapScorePayload', () => {
       expect(result.value.awayGoals).toBeNull();
     }
   });
+
+  it('ignores a non-canonical stat key instead of coercing it to a number (C7)', () => {
+    // Number('') is 0 and Number('1e3') is 1000; the strict decimal-key check rejects both so a
+    // bogus key never lands under an unintended numeric slot.
+    const result = mapScorePayload({ ...baseScore, Stats: { '1': 2, '2': 1, '': 9, '1e3': 7 } });
+    if (result.ok) {
+      expect(result.value.stats.get(0)).toBeUndefined();
+      expect(result.value.stats.get(1000)).toBeUndefined();
+      expect(result.value.stats.get(1)).toBe(2);
+      expect(result.value.stats.get(2)).toBe(1);
+    }
+  });
 });
 
 describe('mapFixturePayload', () => {

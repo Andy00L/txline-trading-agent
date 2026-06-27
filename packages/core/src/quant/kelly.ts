@@ -38,6 +38,13 @@ export const kellyStake = (
     });
   }
 
+  // A fair probability of exactly 0 or 1 is never a real de-vig output (clampProb can emit
+  // a boundary value); treat it as untrustworthy certainty and stake nothing rather than
+  // letting p = 1 drive the staked fraction straight to its cap. A genuine edge has 0 < p < 1.
+  if (!(fairProb > 0 && fairProb < 1)) {
+    return ok(microUsdSaturating(0n));
+  }
+
   const netOdds = offeredOddsMilli / ODDS_MILLI_SCALE - 1; // b = o - 1, positive by the odds brand
   const loseProb = 1 - fairProb;
   const fullKelly = (netOdds * fairProb - loseProb) / netOdds;
@@ -45,6 +52,8 @@ export const kellyStake = (
     return ok(microUsdSaturating(0n)); // no edge, no stake
   }
 
+  // Number(bankroll) is exact for any paper/devnet bankroll (micro-USD well under 2^53,
+  // about 9e9 USD); money stays integer everywhere else. The fraction is a float in [0,1].
   const stakedFraction = Math.min(config.fraction * fullKelly, config.maxFractionOfBankroll);
   const stakeMicro = BigInt(Math.floor(stakedFraction * Number(bankroll)));
   return ok(microUsdSaturating(stakeMicro));

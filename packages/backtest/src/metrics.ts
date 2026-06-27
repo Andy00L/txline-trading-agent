@@ -30,6 +30,9 @@ export type BacktestMetrics = {
    * Positive means the consensus moved further our way after entry (the edge proxy). */
   readonly meanClvProb: number;
   readonly clvPositiveRate: number;
+  /** Number of settled bets that had a known closing line (the CLV denominator). A bet with no
+   * post-entry consensus observation has no defined CLV and is excluded. */
+  readonly clvSamples: number;
   readonly calibration: CalibrationReport | null;
   readonly equityCurve: readonly EquityPoint[];
   readonly maxDrawdown: bigint;
@@ -67,7 +70,11 @@ export const computeBacktestMetrics = (
     }
     totalStaked += settlement.decision.stake;
     totalPnl += settlement.pnl;
-    clvValues.push(closingLineValueProb(settlement.decision.fairProb, settlement.closingFairProb));
+    // Only count CLV when the closing line is known (a consensus update arrived after entry); a
+    // bet with no later observation has no defined CLV and would otherwise count a false zero.
+    if (settlement.closingFairProbKnown) {
+      clvValues.push(closingLineValueProb(settlement.decision.fairProb, settlement.closingFairProb));
+    }
     impliedValues.push(decimalOddsMilliToProb(settlement.decision.entryOddsMilli));
     calibrationSamples.push({
       predicted: settlement.decision.fairProb,
@@ -106,7 +113,9 @@ export const computeBacktestMetrics = (
     hitRate: bets > 0 ? wins / bets : 0,
     meanImpliedProb: mean(impliedValues),
     meanClvProb: mean(clvValues),
-    clvPositiveRate: bets > 0 ? clvValues.filter((value) => value > 0).length / bets : 0,
+    clvPositiveRate:
+      clvValues.length > 0 ? clvValues.filter((value) => value > 0).length / clvValues.length : 0,
+    clvSamples: clvValues.length,
     calibration,
     equityCurve,
     maxDrawdown,

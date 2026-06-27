@@ -78,13 +78,22 @@ const parseSnapshot = (data: string): AgentSnapshot | null => {
  * Subscribe to the agent's live state. The SSE endpoint pushes the current snapshot on
  * connect and one on every change. Returns an unsubscribe function that closes the stream.
  */
-export const subscribeToEvents = (onSnapshot: (snapshot: AgentSnapshot) => void): (() => void) => {
+export type ConnectionListener = (connected: boolean) => void;
+
+export const subscribeToEvents = (
+  onSnapshot: (snapshot: AgentSnapshot) => void,
+  onConnectionChange?: ConnectionListener,
+): (() => void) => {
   const source = new EventSource(`${API_BASE}/api/events`);
+  source.onopen = () => onConnectionChange?.(true);
   source.onmessage = (event) => {
     const snapshot = parseSnapshot(event.data);
     if (snapshot) {
       onSnapshot(snapshot);
     }
   };
+  // EventSource auto-reconnects on a transient drop; onerror fires on the drop and on each failed
+  // retry. Surface it so the UI shows a reconnecting state instead of stale data presented as live.
+  source.onerror = () => onConnectionChange?.(false);
   return () => source.close();
 };

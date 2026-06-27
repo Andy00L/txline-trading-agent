@@ -141,4 +141,72 @@ describe('detectSteam', () => {
     );
     expect(signal).toBeNull();
   });
+
+  it('measures the move by timestamp, not array position, when history arrives out of order', () => {
+    // Same three observations as the happy case but scrambled in arrival order. By timestamp the
+    // move is 0.46 - 0.40 = 0.06 (steam up); by raw array position it would read 0.42 - 0.46 and
+    // miss the signal. sourceRef: detect.ts (endpoints chosen by tsMs).
+    const history: ProbObservation[] = [
+      { tsMs: 2000, fairProb: probOf(0.46) },
+      { tsMs: 0, fairProb: probOf(0.4) },
+      { tsMs: 1000, fairProb: probOf(0.42) },
+    ];
+    const signal = detectSteam(
+      {
+        fixtureId: 1,
+        marketKey: MARKET,
+        outcome: 'home',
+        tsMs: 2000,
+        history,
+        offeredOddsMilli: oddsOf(2300),
+      },
+      steamConfig,
+    );
+    expect(signal).not.toBeNull();
+    expect(signal?.strength).toBeCloseTo(0.06, 10);
+    expect(signal?.fairProb).toBeCloseTo(0.46, 10);
+  });
+
+  it('returns null on a downward move (the line drifting out); this strategy does not lay', () => {
+    const history: ProbObservation[] = [
+      { tsMs: 0, fairProb: probOf(0.5) },
+      { tsMs: 1000, fairProb: probOf(0.46) },
+      { tsMs: 2000, fairProb: probOf(0.42) },
+    ];
+    const signal = detectSteam(
+      {
+        fixtureId: 1,
+        marketKey: MARKET,
+        outcome: 'home',
+        tsMs: 2000,
+        history,
+        offeredOddsMilli: oddsOf(2300),
+      },
+      steamConfig,
+    );
+    expect(signal).toBeNull();
+  });
+
+  it('signals when the move exactly equals minProbMove (inclusive boundary)', () => {
+    // 0.50 - 0.25 = 0.25 exactly in IEEE754, equal to minProbMove; the guard is move <
+    // minProbMove, so the equality boundary must still signal.
+    const boundaryConfig = { windowMs: 5000, minProbMove: 0.25, minEdge: 0.02 };
+    const history: ProbObservation[] = [
+      { tsMs: 0, fairProb: probOf(0.25) },
+      { tsMs: 2000, fairProb: probOf(0.5) },
+    ];
+    const signal = detectSteam(
+      {
+        fixtureId: 1,
+        marketKey: MARKET,
+        outcome: 'home',
+        tsMs: 2000,
+        history,
+        offeredOddsMilli: oddsOf(2300),
+      },
+      boundaryConfig,
+    );
+    expect(signal).not.toBeNull();
+    expect(signal?.strength).toBe(0.25);
+  });
 });

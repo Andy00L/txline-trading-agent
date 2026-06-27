@@ -1,10 +1,16 @@
-import type { Clock } from '@txline-agent/core';
+import { redactSecrets, type Clock } from '@txline-agent/core';
 
 /**
  * In-memory projection of the agent's run, the single source of truth the read-only API
  * serves. The on-chain sink records commits and settlements here; the feed tap records the
  * event count and connection status. Bigints are exposed as decimal strings so the snapshot
  * is plain JSON. The clock is injected (core Clock) so tests are deterministic.
+ *
+ * Restart semantics: this projection and the on-chain sink's pending-reveal map are in-memory
+ * only. The Solana ledger is the durable source of truth; a restart loses the projection and
+ * any pre-settle reveals, so a decision committed before a restart whose match ends after it
+ * cannot be settled by the new process. Do not restart the agent mid-match. sourceRef:
+ * docs/runbooks/M6-agent.md.
  */
 
 export type FeedStatusView = { readonly kind: string; readonly detail: string; readonly atMs: number };
@@ -115,10 +121,14 @@ export class AgentStateStore {
 
   markSettled(index: number, settlement: SettleView): void {
     const entry = this.positions.get(index);
-    if (entry) {
-      entry.status = 'settled';
-      entry.settlement = settlement;
+    if (entry === undefined) {
+      // A settle for an unknown index would corrupt the bankroll and settle count with no
+      // position behind it. Record it as an error instead of counting phantom PnL.
+      this.recordError('settle', `#${index}: settlement for an unknown position index`);
+      return;
     }
+    entry.status = 'settled';
+    entry.settlement = settlement;
     this.settlesCount += 1;
     this.realizedPnl += BigInt(settlement.pnlMicroUsd);
     this.emit();
@@ -126,7 +136,9 @@ export class AgentStateStore {
 
   recordError(stage: string, detail: string): void {
     this.errorsCount += 1;
-    this.recentErrors.push({ stage, detail, atMs: this.clock.nowMs() });
+    // Defense in depth: redact any secret (a keyed RPC URL, an api-key token) before it lands
+    // in recentErrors, which the read-only API serves publicly. sourceRef: redactSecrets (core).
+    this.recentErrors.push({ stage, detail: redactSecrets(detail), atMs: this.clock.nowMs() });
     while (this.recentErrors.length > MAX_RECENT_ERRORS) {
       this.recentErrors.shift();
     }
@@ -169,7 +181,13 @@ export class AgentStateStore {
     }
     const snapshot = this.snapshot();
     for (const listener of this.listeners) {
-      listener(snapshot);
+      try {
+        listener(snapshot);
+      } catch {
+        // A subscriber error (e.g. a disconnected SSE client whose write throws) must never
+        // abort the pipeline step that recorded this update. Drop the failing listener.
+        this.listeners.delete(listener);
+      }
     }
   }
 }

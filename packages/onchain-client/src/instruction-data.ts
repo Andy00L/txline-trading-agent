@@ -8,6 +8,7 @@ import {
   VOID_DECISION_DISCRIMINATOR,
 } from './discriminators.js';
 import { encodeSettleArgs, type SettleArgsInput } from './settle-encode.js';
+import { checkI64, checkU8, checkU16, checkU64 } from './int-range.js';
 
 const withDiscriminator = (discriminator: Uint8Array, body: Uint8Array): Uint8Array => {
   const out = new Uint8Array(discriminator.length + body.length);
@@ -34,6 +35,11 @@ export const encodeInitializeStrategyData = (input: {
       detail: `expected 32 bytes, got ${input.txlineProgram.length}`,
     });
   }
+  const rangeFailure =
+    checkU64(input.strategyId, 'strategyId') ?? checkU64(input.startingBankroll, 'startingBankroll');
+  if (rangeFailure !== null) {
+    return err(rangeFailure);
+  }
   const writer = new BorshWriter();
   writer.u64(input.strategyId);
   writer.bytes(input.txlineProgram);
@@ -53,6 +59,10 @@ export const encodeCommitDecisionData = (input: {
       field: 'commitHash',
       detail: `expected 32 bytes, got ${input.commitHash.length}`,
     });
+  }
+  const rangeFailure = checkI64(input.fixtureId, 'fixtureId') ?? checkU16(input.market, 'market');
+  if (rangeFailure !== null) {
+    return err(rangeFailure);
   }
   const writer = new BorshWriter();
   writer.bytes(input.commitHash);
@@ -78,6 +88,10 @@ export const encodeVoidDecisionData = (input: {
   const reveal = encodeRevealArgs(input.reveal);
   if (!reveal.ok) {
     return reveal;
+  }
+  const reasonFailure = checkU8(input.reason, 'reason');
+  if (reasonFailure !== null) {
+    return err(reasonFailure);
   }
   const writer = new BorshWriter();
   writer.bytes(reveal.value);

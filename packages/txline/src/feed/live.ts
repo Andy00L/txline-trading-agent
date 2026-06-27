@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   type Clock,
   type Feed,
+  type FeedChannel,
   type FeedEnvelope,
   type FeedEvent,
   type FeedRunResult,
@@ -24,10 +25,14 @@ import type { IntervalCoord } from './source.js';
 export type SseChannel = 'odds' | 'scores';
 export type TaggedFrame = { readonly channel: SseChannel; readonly frame: SseFrame };
 
+/** Per-channel SSE resume ids. The odds and scores streams have independent id spaces, so each
+ * resumes from its own last id; a single shared id would resume one channel from a foreign offset. */
+export type SseResumeIds = { readonly odds: string | null; readonly scores: string | null };
+
 /** Opens an SSE connection and yields tagged frames until the stream ends (the
- * iterator completes) or fails (it throws). lastEventId resumes via Last-Event-ID. */
+ * iterator completes) or fails (it throws). Each channel resumes via its own Last-Event-ID. */
 export interface SseConnector {
-  connect(lastEventId: string | null): AsyncIterable<TaggedFrame>;
+  connect(resume: SseResumeIds): AsyncIterable<TaggedFrame>;
 }
 
 export type LiveSseFeedDeps = {
@@ -45,14 +50,15 @@ export type LiveSseFeedDeps = {
 
 type RunState = {
   seq: number;
-  lastEventId: string | null;
+  // Per-channel SSE resume ids: the two streams have independent id spaces.
+  resumeIds: { odds: string | null; scores: string | null };
   lastTsMs: number;
   reconnects: number;
   gaps: number;
   attempt: number;
 };
 
-const heartbeatSchema = z.object({ Ts: z.number() });
+const heartbeatSchema = z.object({ Ts: z.number().int() });
 
 const parseHeartbeatTs = (data: string | undefined): number | null => {
   if (data === undefined) {
@@ -98,7 +104,7 @@ export class LiveSseFeed implements Feed {
     const idempotency = new IdempotencyTracker();
     const state: RunState = {
       seq: 0,
-      lastEventId: null,
+      resumeIds: { odds: null, scores: null },
       lastTsMs: 0,
       reconnects: 0,
       gaps: 0,
@@ -112,11 +118,13 @@ export class LiveSseFeed implements Feed {
         break;
       }
       let failed = false;
+      let producedAny = false;
       try {
-        for await (const tagged of this.deps.connector.connect(state.lastEventId)) {
+        for await (const tagged of this.deps.connector.connect(state.resumeIds)) {
           if (this.stopped) {
             break;
           }
+          producedAny = true;
           yield* this.ingest(tagged, state, idempotency);
         }
       } catch {
@@ -130,6 +138,12 @@ export class LiveSseFeed implements Feed {
       if (state.reconnects >= this.maxReconnects) {
         yield this.statusEvent('stopped', `reached max reconnects ${this.maxReconnects}`, state);
         break;
+      }
+      // A connection that delivered at least one frame was healthy: reset the backoff escalation
+      // so a single transient drop after a long-lived stream does not start at the maximum delay.
+      // Consecutive failed connects keep escalating attempt. sourceRef: http/backoff.ts (full jitter).
+      if (producedAny) {
+        state.attempt = 0;
       }
       state.reconnects += 1;
       yield this.statusEvent('reconnecting', failed ? 'connection error' : 'stream ended', state);
@@ -169,6 +183,13 @@ export class LiveSseFeed implements Feed {
     return { kind: 'feed-status', envelope: this.envelope({ kind, detail }, state) };
   }
 
+  /** Record a dropped/invalid frame as a gap, both counting it and emitting a gap event so a
+   * consumer sees the dropped data per-event (not just in the final gapsDetected count). */
+  private gap(channel: FeedChannel, detail: string, state: RunState): FeedEvent {
+    state.gaps += 1;
+    return { kind: 'gap', envelope: this.envelope<GapInfo>({ channel, detail }, state) };
+  }
+
   private async *ingest(
     tagged: TaggedFrame,
     state: RunState,
@@ -176,7 +197,8 @@ export class LiveSseFeed implements Feed {
   ): AsyncGenerator<FeedEvent> {
     const { channel, frame } = tagged;
     if (frame.id !== undefined) {
-      state.lastEventId = frame.id;
+      // Track the resume id PER channel; the two streams have independent id spaces.
+      state.resumeIds[channel] = frame.id;
     }
     if (frame.event === 'heartbeat') {
       const tsMs = parseHeartbeatTs(frame.data) ?? this.deps.clock.nowMs();
@@ -186,18 +208,19 @@ export class LiveSseFeed implements Feed {
     if (frame.data === undefined) {
       return;
     }
+    const feedChannel: FeedChannel = channel === 'odds' ? 'odds' : 'score';
     let json: unknown;
     try {
       json = JSON.parse(frame.data);
     } catch {
-      state.gaps += 1;
+      yield this.gap(feedChannel, 'malformed JSON frame', state);
       return;
     }
 
     if (channel === 'odds') {
       const parsed = parseWith(oddsPayloadSchema, json);
       if (!parsed.ok) {
-        state.gaps += 1;
+        yield this.gap('odds', 'odds payload rejected by schema', state);
         return;
       }
       if (!idempotency.acceptOdds(parsed.value.MessageId)) {
@@ -205,7 +228,7 @@ export class LiveSseFeed implements Feed {
       }
       const mapped = mapOddsPayload(parsed.value);
       if (!mapped.ok) {
-        state.gaps += 1;
+        yield this.gap('odds', 'odds payload could not be mapped', state);
         return;
       }
       state.lastTsMs = Math.max(state.lastTsMs, mapped.value.tsMs);
@@ -215,7 +238,7 @@ export class LiveSseFeed implements Feed {
 
     const parsed = parseWith(scoresPayloadSchema, json);
     if (!parsed.ok) {
-      state.gaps += 1;
+      yield this.gap('score', 'scores payload rejected by schema', state);
       return;
     }
     if (!idempotency.acceptScore(parsed.value.FixtureId, parsed.value.Seq)) {
@@ -223,7 +246,7 @@ export class LiveSseFeed implements Feed {
     }
     const mapped = mapScorePayload(parsed.value);
     if (!mapped.ok) {
-      state.gaps += 1;
+      yield this.gap('score', 'scores payload could not be mapped', state);
       return;
     }
     state.lastTsMs = Math.max(state.lastTsMs, mapped.value.tsMs);

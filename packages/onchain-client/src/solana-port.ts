@@ -18,7 +18,7 @@ import {
   type SolanaRpcSubscriptionsApi,
   type TransactionSigner,
 } from '@solana/kit';
-import { err, ok, type Result } from '@txline-agent/core';
+import { err, ok, redactSecrets, type Result } from '@txline-agent/core';
 import {
   decodeDecisionCommitAccount,
   decodeStrategyAccount,
@@ -60,7 +60,10 @@ export type SolanaOnChainPortConfig = {
   readonly commitment?: Commitment;
 };
 
-const messageOf = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause));
+// Redact any secret (a keyed RPC endpoint URL, an api-key token) from a transport error before
+// it becomes an error value the agent records and serves publicly. sourceRef: redactSecrets (core).
+const messageOf = (cause: unknown): string =>
+  redactSecrets(cause instanceof Error ? cause.message : String(cause));
 
 /**
  * The live OnChainPort: builds, signs, and confirms agent_ledger transactions with

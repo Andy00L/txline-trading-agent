@@ -32,6 +32,14 @@ describe('devigMultiplicative', () => {
   it('errors on an empty market', () => {
     expect(devigMultiplicative([]).ok).toBe(false);
   });
+
+  it('errors on a single-line (degenerate) book that would imply probability 1.0', () => {
+    const result = devigMultiplicative([line('home', 1900)]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('degenerate-book');
+    }
+  });
 });
 
 describe('devigShin', () => {
@@ -116,6 +124,14 @@ describe('devigShin', () => {
     if (result.ok) {
       expect(result.value.shinZ).toBe(0);
       expect(result.value.outcomes[0]?.fairProb).toBeCloseTo(0.5, 12);
+    }
+  });
+
+  it('errors on a single-line (degenerate) book', () => {
+    const result = devigShin([line('home', 1900)]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('degenerate-book');
     }
   });
 });

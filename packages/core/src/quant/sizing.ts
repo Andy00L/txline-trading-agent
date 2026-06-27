@@ -32,6 +32,8 @@ export const steamStake = (
   }
   const scaled = config.baseFraction + config.strengthScale * Math.max(0, strength);
   const fraction = Math.min(config.maxFraction, Math.max(0, scaled));
+  // Number(bankroll) is exact for any paper/devnet bankroll (micro-USD under 2^53); the
+  // staked fraction is a float in [0,1] and the result is floored back to integer micro-USD.
   const stake = BigInt(Math.floor(fraction * Number(bankroll)));
   return ok(microUsdSaturating(stake));
 };

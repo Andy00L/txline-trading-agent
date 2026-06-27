@@ -17,7 +17,12 @@ declare_id!("FLZiKMUaPAGMtPLbfHvHwfiVfkTZD8RZ84CSrkDy1kLD");
 pub mod agent_ledger {
     use super::*;
 
-    /// Create a strategy ledger and pin its CPI target (the txline program).
+    /// Create a strategy ledger and pin its CPI target (the txline program). Trust note: the
+    /// txline_program is caller-supplied and only pinned thereafter, so a strategy is only as
+    /// trustworthy as the program it pinned (a fake oracle would let that authority fabricate wins
+    /// on its own ledger). A verifier must confirm a strategy's stored txline_program equals the
+    /// real txoracle id before trusting its record; the judge-facing strategy is initialized with
+    /// the real devnet txoracle id. sourceRef: M0-recon-findings.md, docs/audit/M8-audit.md.
     pub fn initialize_strategy(
         ctx: Context<InitializeStrategy>,
         strategy_id: u64,
@@ -99,6 +104,13 @@ pub mod agent_ledger {
                 && args.reveal.strategy == ctx.accounts.strategy.key(),
             AgentError::RoutingMismatch
         );
+        // The sealed side must be a valid 1X2 outcome. An out-of-range side can never equal a valid
+        // claimed_result, so without this it would settle as a silent guaranteed loss rather than
+        // failing loudly; the commit hash binds side, so this catches a malformed seal.
+        require!(
+            matches!(args.reveal.side, SIDE_HOME | SIDE_DRAW | SIDE_AWAY),
+            AgentError::InvalidSide
+        );
 
         // Bind the oracle proof to THIS decision's fixture: the proven summary must be for the
         // committed fixture, so a winning proof from a different match the same UTC day cannot
@@ -127,8 +139,9 @@ pub mod agent_ledger {
 
         let (comparison, threshold) =
             predicate_for_claim(args.claimed_result).ok_or(AgentError::InvalidClaim)?;
+        let epoch_day = epoch_day_le(args.ts).ok_or(AgentError::InvalidRootsPda)?;
         let (expected_roots, _bump) = Pubkey::find_program_address(
-            &[b"daily_scores_roots", &epoch_day_le(args.ts)],
+            &[b"daily_scores_roots", &epoch_day],
             &ctx.accounts.strategy.txline_program,
         );
         require_keys_eq!(

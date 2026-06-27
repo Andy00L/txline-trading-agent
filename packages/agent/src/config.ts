@@ -46,13 +46,21 @@ const requireEnv = (env: EnvRecord, field: string): Result<string, AgentConfigEr
   return ok(value);
 };
 
-const intEnv = (env: EnvRecord, field: string, fallback: number): number => {
+// Parse an integer env var, falling back to a safe default when missing or out of range. The
+// `min` guards knobs that must stay positive (history limit, concurrency, windows): a typo'd
+// zero or negative would silently disable signal detection, so it falls back to the default.
+const intEnv = (
+  env: EnvRecord,
+  field: string,
+  fallback: number,
+  min = Number.MIN_SAFE_INTEGER,
+): number => {
   const value = env[field];
   if (value === undefined || value.length === 0) {
     return fallback;
   }
   const parsed = Number.parseInt(value, 10);
-  return Number.isInteger(parsed) ? parsed : fallback;
+  return Number.isInteger(parsed) && parsed >= min ? parsed : fallback;
 };
 
 const floatEnv = (env: EnvRecord, field: string, fallback: number): number => {
@@ -64,13 +72,16 @@ const floatEnv = (env: EnvRecord, field: string, fallback: number): number => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+// Parse a non-negative bigint env var (money). A negative value would be silently clamped to
+// zero by microUsdSaturating (disabling the agent), so it falls back to the positive default.
 const bigintEnv = (env: EnvRecord, field: string, fallback: bigint): bigint => {
   const value = env[field];
   if (value === undefined || value.length === 0) {
     return fallback;
   }
   try {
-    return BigInt(value);
+    const parsed = BigInt(value);
+    return parsed >= 0n ? parsed : fallback;
   } catch {
     return fallback;
   }
@@ -79,7 +90,7 @@ const bigintEnv = (env: EnvRecord, field: string, fallback: bigint): bigint => {
 const buildPipelineConfig = (env: EnvRecord): PipelineConfig => ({
   devigMethod: 'multiplicative',
   steam: {
-    windowMs: intEnv(env, 'STEAM_WINDOW_MS', 900_000),
+    windowMs: intEnv(env, 'STEAM_WINDOW_MS', 900_000, 1),
     minProbMove: floatEnv(env, 'STEAM_MIN_PROB_MOVE', 0.01),
     minEdge: -1, // steam is sized by move strength, not gated on entry EV (de-margined book)
   },
@@ -89,11 +100,11 @@ const buildPipelineConfig = (env: EnvRecord): PipelineConfig => ({
     risk: {
       bankrollFloor: microUsdSaturating(0n),
       maxStakePerOrder: microUsdSaturating(bigintEnv(env, 'MAX_STAKE_MICRO_USD', 50_000_000n)),
-      maxConcurrent: intEnv(env, 'MAX_CONCURRENT', 200),
+      maxConcurrent: intEnv(env, 'MAX_CONCURRENT', 200, 1),
       totalExposureCap: microUsdSaturating(2_000_000_000n),
       perFixtureExposureCap: microUsdSaturating(100_000_000n),
       perMarketExposureCap: microUsdSaturating(100_000_000n),
-      staleFeedMs: intEnv(env, 'STALE_FEED_MS', 86_400_000),
+      staleFeedMs: intEnv(env, 'STALE_FEED_MS', 86_400_000, 1),
       outlierOddsZ: 100,
       maxDailyDrawdown: microUsdSaturating(1_000_000_000n),
     },
@@ -104,7 +115,7 @@ const buildPipelineConfig = (env: EnvRecord): PipelineConfig => ({
     },
   },
   startingBankroll: microUsdSaturating(bigintEnv(env, 'STARTING_BANKROLL', 1_000_000_000n)),
-  steamHistoryLimit: intEnv(env, 'STEAM_HISTORY_LIMIT', 100),
+  steamHistoryLimit: intEnv(env, 'STEAM_HISTORY_LIMIT', 100, 1),
 });
 
 /** Build the agent config from environment variables. The four TxLINE connection fields are
@@ -135,7 +146,7 @@ export const loadAgentConfig = (env: EnvRecord): Result<AgentConfig, AgentConfig
       apiToken: apiToken.value,
     },
     pipeline: buildPipelineConfig(env),
-    apiPort: intEnv(env, 'API_PORT', 8080),
+    apiPort: intEnv(env, 'API_PORT', 8080, 1),
     maxReconnects: maxReconnects > 0 ? maxReconnects : null,
   });
 };
