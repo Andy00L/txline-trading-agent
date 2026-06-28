@@ -44,9 +44,9 @@ independent Elo market-decorrelation stake overlay, and an implemented on-chain 
 total), all green**, with `typecheck`, `lint`, a coding-standards gate, and a core-purity gate all
 passing. The `agent_ledger` program is deployed and the full settle trust chain is proven on devnet
 (commit before reveal, CPI-settle, and three rejection cases: tampered root, mismatched fixture,
-swapped stats). The entry-odds proof is verified offline (program tests plus a cross-language borsh
-golden) and ships ready to deploy: because it adds a `DecisionCommit` field, going live is a
-coordinated devnet upgrade on a fresh strategy, so it is not yet on the deployed program. A
+swapped stats). The entry-odds proof is now deployed and proven on devnet too: `prove_entry_odds`
+proved a sealed entry price against the published odds Merkle root (a `DecisionOddsProven`
+decision) and rejected a tampered price, both via `prove:e2e`. A
 security audit ([docs/audit/M8-audit.md](docs/audit/M8-audit.md)) closed two
 critical settlement trust gaps, which are fixed, deployed, and re-proven on-chain; the later
 hardening pass added defense-in-depth (a sealed-side guard, a checked epoch-day derivation,
@@ -56,6 +56,7 @@ tests.
 | Devnet artifact | Address |
 | --- | --- |
 | `agent_ledger` program | [`FLZiKMUaPAGMtPLbfHvHwfiVfkTZD8RZ84CSrkDy1kLD`](https://explorer.solana.com/address/FLZiKMUaPAGMtPLbfHvHwfiVfkTZD8RZ84CSrkDy1kLD?cluster=devnet) |
+| Entry-odds proof (`DecisionOddsProven`) | [proven on devnet](https://explorer.solana.com/tx/3K5ZUFMMvrDCnziaE7MVUR7ApFekL2BKggFwB11vSCCaDqBg9MAQbs3piB74vMXp2np8srhfsCeNA8m8w9SFdJVq?cluster=devnet) |
 | TxLINE `txoracle` (CPI target) | `6pW64gN1s2uqjHkn1unFeEjAwJkPGHoppGvS715wyP2J` |
 | Strategy authority wallet | `8SafovV7444FGu3fGUJDWiqkrwsLpamsCH7buQyjKe5P` |
 
@@ -169,9 +170,10 @@ An implemented, offline-verified extension, `prove_entry_odds`, proves the **ent
 after settle it re-checks the sealed reveal, binds the snapshot's price for the committed side to
 the sealed entry odds, re-derives the daily odds-roots PDA, and CPIs into `txoracle::validate_odds`
 against the published odds Merkle root, so the committed entry price cannot be backfilled any more
-than the outcome can. It is covered by program tests and a cross-language borsh golden; because it
-adds a `DecisionCommit` field, deploying it is a coordinated devnet upgrade on a fresh strategy, so
-the live program currently runs the commit-and-settle chain. Verification type details and the
+than the outcome can. It is covered by program tests and a cross-language borsh golden, and is now
+deployed and proven on devnet: `prove:e2e` proved an entry price against the published odds Merkle
+root (a `DecisionOddsProven` decision) and rejected a tampered price, so all three trust links run
+on the live program. Verification type details and the
 trust model are in [docs/submission/TECHNICAL.md](docs/submission/TECHNICAL.md).
 
 ## 📦 Submission

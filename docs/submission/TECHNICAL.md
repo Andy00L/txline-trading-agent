@@ -104,8 +104,9 @@ Implemented:
   inputs and outcomes are both proven against TxODDS's own roots. It is covered by program tests and
   a cross-language borsh golden, and is sized to a legacy transaction (worst-case about 886 bytes of
   instruction data, under the 1232-byte limit, measured on a real proof), so no Address Lookup Table
-  is needed. It adds a `DecisionCommit` field, so going live is a coordinated devnet upgrade on a
-  fresh strategy and is not yet on the deployed program.
+  is needed. It is now deployed and proven on devnet: `prove:e2e` proved an entry price against the
+  published odds Merkle root (a `DecisionOddsProven` decision) and rejected a tampered price, so all
+  three trust links (commit, prove entry odds, settle) run on the live program.
 - Layer an independent rating on, decorrelated. A frozen World Football Elo rating is added not as a
   goals-model fit prior (which double-counts the market) but as a market-decorrelation overlay: the
   agent acts only on the rating's residual after orthogonalizing against the consensus, as a bounded
