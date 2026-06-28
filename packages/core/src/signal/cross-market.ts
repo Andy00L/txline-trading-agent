@@ -232,5 +232,8 @@ export const detectCrossMarketValue = (
     offeredOddsMilli,
     edge: expectedValue(modelFairProb, offeredOddsMilli),
     strength: best.edge,
+    // The market consensus for this leg, so the decorrelation overlay can measure the
+    // independent rating's residual against the price the model is disagreeing with.
+    marketProb: best.marketProb,
   });
 };

@@ -44,3 +44,15 @@ export const deriveDailyScoresRootsPda = (txoracleProgramId: Address, tsMs: bigi
     programAddress: txoracleProgramId,
     seeds: [textSeed('daily_scores_roots'), u16Le(Number(tsMs / 86_400_000n))],
   });
+
+/**
+ * The txoracle daily odds batch roots PDA for the UTC day of ts (milliseconds):
+ * ["daily_batch_roots", floor(ts / 86_400_000) as u16 LE], derived against the txoracle program.
+ * The odds proof validates against this root, separately from the scores roots.
+ * sourceRef: docs/research/txline-onchain.md (odds roots PDA).
+ */
+export const deriveDailyOddsRootsPda = (txoracleProgramId: Address, tsMs: bigint) =>
+  getProgramDerivedAddress({
+    programAddress: txoracleProgramId,
+    seeds: [textSeed('daily_batch_roots'), u16Le(Number(tsMs / 86_400_000n))],
+  });

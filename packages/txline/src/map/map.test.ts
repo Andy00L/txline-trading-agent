@@ -209,6 +209,9 @@ describe('mapFixturePayload', () => {
     if (result.ok) {
       expect(result.value.participant1).toBe('Mexico');
       expect(result.value.participant2).toBe('South Africa');
+      // The stable participant ids key the independent Elo ratings.
+      expect(result.value.participant1Id).toBe(111);
+      expect(result.value.participant2Id).toBe(222);
       expect(result.value.startTimeMs).toBe(1750000000000);
       expect(result.value.participant1IsHome).toBe(true);
     }

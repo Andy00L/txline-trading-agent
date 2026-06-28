@@ -91,22 +91,36 @@ On-chain, the agent CPIs into `txoracle::validate_stat` (devnet
 `6pW64gN1s2uqjHkn1unFeEjAwJkPGHoppGvS715wyP2J`) with a single read-only `daily_scores_merkle_roots`
 account re-derived from the proof timestamp.
 
-## Extensions (scoped, not yet wired)
+## Extensions: two now implemented, one scoped
 
-The trust chain and the strategy compose cleanly with three extensions the design already
-accommodates:
+Two extensions the design accommodated are now built and verified offline; the third is scoped.
 
-- Prove the inputs on-chain too. The oracle exposes `validate_odds` (a read-only validator over
-  `daily_odds_merkle_roots`), so the agent could CPI-prove that the odds a decision was based on are
-  a genuine TxLINE record, closing the loop end to end: inputs and outcomes both proven against
-  TxODDS's own roots. Today the settle proves the deciding score; the odds proof is the next link.
-- Bet and settle Over/Under directly. `validate_stat` accepts an `Add` binary expression, so a
-  total-goals predicate (Over 2.5 = participant1 + participant2 goals `GreaterThan 2`) settles on the
-  same primitive. The cross-market model already prices the Over/Under ladder; this would add it as a
-  bettable, on-chain-settleable market and roughly double the decision rate.
-- Anchor the fit with an independent prior. A World Football Elo rating mapped to a supremacy prior
-  would corroborate the cross-market signal with information the consensus does not contain, the one
-  clean way to add genuine forecasting edge to a de-margined feed.
+Implemented:
+
+- Prove the inputs on-chain too (`prove_entry_odds` into `validate_odds`). After settle the agent
+  re-checks the sealed reveal, binds the snapshot's price for the committed side to the sealed
+  `entry_odds_milli`, re-derives `daily_odds_merkle_roots` from the odds timestamp, and CPIs into
+  `validate_odds`, so the committed entry price is proven a genuine TxLINE record, not just sealed:
+  inputs and outcomes are both proven against TxODDS's own roots. It is covered by program tests and
+  a cross-language borsh golden, and is sized to a legacy transaction (worst-case about 886 bytes of
+  instruction data, under the 1232-byte limit, measured on a real proof), so no Address Lookup Table
+  is needed. It adds a `DecisionCommit` field, so going live is a coordinated devnet upgrade on a
+  fresh strategy and is not yet on the deployed program.
+- Layer an independent rating on, decorrelated. A frozen World Football Elo rating is added not as a
+  goals-model fit prior (which double-counts the market) but as a market-decorrelation overlay: the
+  agent acts only on the rating's residual after orthogonalizing against the consensus, as a bounded
+  confidence weight on the Kelly stake. The literature is explicit that a standalone rating does not
+  beat a de-margined consensus (Hvattum-Arntzen 2010; Wunderlich-Memmert 2018) and that a correlated
+  model is unprofitable however accurate (Hubacek et al. 2019), so this is an honest calibration
+  overlay, not a claimed new edge; the sweep reports Closing Line Value with and without it.
+
+Scoped (not yet wired):
+
+- Bet and settle Over/Under directly. `validate_stat` accepts an `Add` binary expression (the
+  predicate op enum is exactly `{Add, Subtract}`), so a total-goals predicate (Over 2.5 =
+  participant1 + participant2 goals `GreaterThan 2`, half-lines only) settles on the same primitive.
+  The cross-market model already prices the Over/Under ladder; this would add it as a bettable,
+  on-chain-settleable market and roughly double the decision rate.
 
 ## TxLINE API feedback
 

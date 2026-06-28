@@ -11,9 +11,11 @@ import type { EncodeError } from './borsh.js';
 import {
   encodeCommitDecisionData,
   encodeInitializeStrategyData,
+  encodeProveEntryOddsData,
   encodeSettleDecisionData,
 } from './instruction-data.js';
 import type { SettleArgsInput } from './settle-encode.js';
+import type { ProveOddsArgsInput } from './prove-odds-encode.js';
 
 const addressEncoder = getAddressEncoder();
 
@@ -150,6 +152,39 @@ export const buildSettleDecisionInstruction = (input: {
       metaWritable(input.decision),
       metaReadonly(input.txlineProgram),
       metaReadonly(input.dailyScoresMerkleRoots),
+    ],
+    data: data.value,
+  });
+};
+
+/**
+ * prove_entry_odds. Accounts mirror the Anchor ProveEntryOdds context order: authority (signer),
+ * strategy (read-only), decision (writable, flag set), txline_program (CPI target, read-only),
+ * daily_odds_merkle_roots (read-only, read by the validate_odds CPI). Sized to fit a legacy
+ * transaction: the odds proof plus snapshot is the bulk of the data and only one extra account
+ * over settle. sourceRef: programs/agent_ledger/src/lib.rs ProveEntryOdds.
+ */
+export const buildProveEntryOddsInstruction = (input: {
+  readonly programId: Address;
+  readonly authority: Address;
+  readonly strategy: Address;
+  readonly decision: Address;
+  readonly txlineProgram: Address;
+  readonly dailyOddsMerkleRoots: Address;
+  readonly proveOddsArgs: ProveOddsArgsInput;
+}): Result<Instruction, EncodeError> => {
+  const data = encodeProveEntryOddsData(input.proveOddsArgs);
+  if (!data.ok) {
+    return data;
+  }
+  return ok({
+    programAddress: input.programId,
+    accounts: [
+      metaReadonlySigner(input.authority),
+      metaReadonly(input.strategy),
+      metaWritable(input.decision),
+      metaReadonly(input.txlineProgram),
+      metaReadonly(input.dailyOddsMerkleRoots),
     ],
     data: data.value,
   });

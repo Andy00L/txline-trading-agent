@@ -1,6 +1,6 @@
 # 🤖 TxLINE autonomous odds-trading agent
 
-![Tests](https://img.shields.io/badge/tests-285%20passing-1F8A5B) ![Solana](https://img.shields.io/badge/Solana-devnet-2B5FD9) ![Mode](https://img.shields.io/badge/mode-paper%20trading-6B7280) ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6) ![Anchor](https://img.shields.io/badge/Anchor-0.31-512BD4)
+![Tests](https://img.shields.io/badge/tests-307%20passing-1F8A5B) ![Solana](https://img.shields.io/badge/Solana-devnet-2B5FD9) ![Mode](https://img.shields.io/badge/mode-paper%20trading-6B7280) ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6) ![Anchor](https://img.shields.io/badge/Anchor-0.31-512BD4)
 
 ![TxLINE agent operator dashboard: live feed status, the ingest to settle pipeline, and the committed and settled position ledger with on-chain Verified on Solana stamps](docs/assets/dashboard.png)
 
@@ -37,12 +37,17 @@ live behaviour, not a separate script.
 
 ## 📊 Status
 
-M0-M9 complete, followed by a review-and-harden pass and a cross-market strategy upgrade (a
-goals-model relative-value signal across the full odds surface, replacing steam-following).
-**275 TypeScript tests + 10 Rust tests (285 total), all green**, with `typecheck`, `lint`, a
-coding-standards gate, and a core-purity gate all passing. The `agent_ledger` program is deployed and the full trust chain is proven on devnet
+M0-M9 complete, followed by a review-and-harden pass, a cross-market strategy upgrade (a
+goals-model relative-value signal across the full odds surface, replacing steam-following), an
+independent Elo market-decorrelation stake overlay, and an implemented on-chain entry-odds proof
+(`prove_entry_odds` via `txoracle::validate_odds`). **295 TypeScript tests + 12 Rust tests (307
+total), all green**, with `typecheck`, `lint`, a coding-standards gate, and a core-purity gate all
+passing. The `agent_ledger` program is deployed and the full settle trust chain is proven on devnet
 (commit before reveal, CPI-settle, and three rejection cases: tampered root, mismatched fixture,
-swapped stats). A security audit ([docs/audit/M8-audit.md](docs/audit/M8-audit.md)) closed two
+swapped stats). The entry-odds proof is verified offline (program tests plus a cross-language borsh
+golden) and ships ready to deploy: because it adds a `DecisionCommit` field, going live is a
+coordinated devnet upgrade on a fresh strategy, so it is not yet on the deployed program. A
+security audit ([docs/audit/M8-audit.md](docs/audit/M8-audit.md)) closed two
 critical settlement trust gaps, which are fixed, deployed, and re-proven on-chain; the later
 hardening pass added defense-in-depth (a sealed-side guard, a checked epoch-day derivation,
 secret redaction on error paths, and settlement seq-ordering integrity) and broader edge-case
@@ -84,7 +89,7 @@ and [docs/runbooks/M4-devnet.md](docs/runbooks/M4-devnet.md).
 
 ```bash
 pnpm install
-pnpm verify            # typecheck + 275 tests + lint + standards + core-purity, all green
+pnpm verify            # typecheck + 295 tests + lint + standards + core-purity, all green
 ```
 
 Run the backtest (the proof centerpiece; needs the TxLINE token). `backtest:sweep` aggregates the
@@ -142,14 +147,32 @@ zero, so this is a small, honestly-bounded edge, not a proven one. Closing Line 
 variance-driven +41% ROI over 22 long-odds-leaning bets) is the leading indicator a desk tracks,
 and it is reported only over bets that had a known pre-kickoff closing line.
 
+**Independent rating, decorrelated.** A frozen World Football Elo rating is layered on as a
+market-decorrelation overlay, not a second forecast. A standalone rating does not beat a
+de-margined consensus out-of-sample (Hvattum and Arntzen 2010; Wunderlich and Memmert 2018), and a
+rating correlated with the price is unprofitable however accurate (Hubacek et al. 2019), so the
+agent acts only on the rating's residual after orthogonalizing against the consensus, as a bounded
+confidence weight on the Kelly stake (up to 1.25x on corroboration, 0.5x on contradiction, never a
+gate). It is a calibration overlay, not a new edge source; the constants are frozen from the
+published method rather than tuned on the agent's own bets, and the sweep reports Closing Line Value
+with and without it so the effect is measured, not assumed.
+
 ## 🔗 On-chain program
 
 `agent_ledger` (paper trading only, no real funds). One `Strategy` ledger per agent; one
 `DecisionCommit` per decision. `settle_decision` recomputes the keccak commit hash, derives the
 1X2 predicate from the claim, re-derives the daily scores roots PDA, and CPIs into
 `validate_stat`; it binds the proof to the committed fixture and pins the participant goal stat
-keys, so a settle cannot substitute a fixture or swap stats to fabricate a result. Verification
-type details and the trust model are in [docs/submission/TECHNICAL.md](docs/submission/TECHNICAL.md).
+keys, so a settle cannot substitute a fixture or swap stats to fabricate a result.
+
+An implemented, offline-verified extension, `prove_entry_odds`, proves the **entry price** too:
+after settle it re-checks the sealed reveal, binds the snapshot's price for the committed side to
+the sealed entry odds, re-derives the daily odds-roots PDA, and CPIs into `txoracle::validate_odds`
+against the published odds Merkle root, so the committed entry price cannot be backfilled any more
+than the outcome can. It is covered by program tests and a cross-language borsh golden; because it
+adds a `DecisionCommit` field, deploying it is a coordinated devnet upgrade on a fresh strategy, so
+the live program currently runs the commit-and-settle chain. Verification type details and the
+trust model are in [docs/submission/TECHNICAL.md](docs/submission/TECHNICAL.md).
 
 ## 📦 Submission
 

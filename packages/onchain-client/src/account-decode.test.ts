@@ -50,6 +50,7 @@ const buildDecisionCommitBody = (): Uint8Array => {
   writer.u8(2); // outcome_side (away)
   writer.i64(-25_000_000n); // pnl (a loss, signed)
   writer.u64(200n); // settle_slot
+  writer.u8(1); // entry_odds_proven (true)
   writer.u8(253); // bump
   return writer.finish();
 };
@@ -106,5 +107,7 @@ describe('decodeDecisionCommitAccount', () => {
     expect(decoded.value.outcomeSide).toBe(2);
     expect(decoded.value.pnl).toBe(-25_000_000n);
     expect(decoded.value.settleSlot).toBe(200n);
+    expect(decoded.value.entryOddsProven).toBe(true);
+    expect(decoded.value.bump).toBe(253);
   });
 });

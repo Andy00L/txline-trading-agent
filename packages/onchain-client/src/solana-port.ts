@@ -29,11 +29,18 @@ import {
 import {
   buildCommitDecisionInstruction,
   buildInitializeStrategyInstruction,
+  buildProveEntryOddsInstruction,
   buildSetComputeUnitLimitInstruction,
   buildSettleDecisionInstruction,
   DEFAULT_COMPUTE_UNIT_LIMIT,
 } from './instruction-build.js';
-import { deriveCommitPda, deriveDailyScoresRootsPda, deriveStrategyPda } from './pda.js';
+import {
+  deriveCommitPda,
+  deriveDailyOddsRootsPda,
+  deriveDailyScoresRootsPda,
+  deriveStrategyPda,
+} from './pda.js';
+import type { ProveOddsArgsInput } from './prove-odds-encode.js';
 import type {
   CommitReceipt,
   CommitRequest,
@@ -274,5 +281,48 @@ export class SolanaOnChainPort implements OnChainPort {
       decoded.value.status === STATUS_SETTLED &&
       decoded.value.outcomeSide === request.settleArgs.reveal.side;
     return ok({ txSig: sent.value, won, pnl: decoded.value.pnl });
+  }
+
+  /**
+   * Prove a settled decision's sealed entry odds were a real published price, via a CPI into
+   * validate_odds. Re-derives the daily odds-roots PDA from the odds ts, sends prove_entry_odds
+   * with a compute-budget bump, and reads the decision back so the proven flag is authoritative.
+   * Fits a legacy transaction (one account more than settle). sourceRef: programs/agent_ledger.
+   */
+  async proveEntryOdds(request: {
+    readonly index: bigint;
+    readonly proveOddsArgs: ProveOddsArgsInput;
+  }): Promise<Result<{ readonly txSig: string; readonly proven: boolean }, OnChainError>> {
+    const strategy = await this.strategyAddress();
+    const [decision] = await deriveCommitPda(this.programId, strategy, request.index);
+    const [dailyOddsMerkleRoots] = await deriveDailyOddsRootsPda(
+      this.txoracleProgramId,
+      request.proveOddsArgs.ts,
+    );
+    const instruction = buildProveEntryOddsInstruction({
+      programId: this.programId,
+      authority: this.authority.address,
+      strategy,
+      decision,
+      txlineProgram: this.txoracleProgramId,
+      dailyOddsMerkleRoots,
+      proveOddsArgs: request.proveOddsArgs,
+    });
+    if (!instruction.ok) {
+      return err({ kind: 'encode', detail: `${instruction.error.field}: ${instruction.error.detail}` });
+    }
+    const computeBudget = buildSetComputeUnitLimitInstruction(this.computeUnitLimit);
+    const sent = await this.sendInstructions([computeBudget, instruction.value]);
+    if (!sent.ok) {
+      return sent;
+    }
+    const decoded = await this.readDecision(request.index);
+    if (!decoded.ok) {
+      return decoded;
+    }
+    if (decoded.value === null) {
+      return err({ kind: 'account-missing', detail: 'decision account not found after prove' });
+    }
+    return ok({ txSig: sent.value, proven: decoded.value.entryOddsProven });
   }
 }

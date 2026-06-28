@@ -115,3 +115,86 @@ pub fn cpi_validate_stat<'info>(
     invoke(&instruction, &[daily_scores_merkle_roots, txline_program])?;
     Ok(())
 }
+
+// Mirror of the txoracle Odds types, byte-for-byte, so borsh-encoding them produces the exact
+// instruction data validate_odds expects. validate_odds proves that an odds snapshot (the
+// price_names + parallel prices for a fixture at one message) is a leaf in the published daily
+// odds batch tree, the same way validate_stat proves a score. sourceRef: txoracle devnet IDL
+// v1.5.2 (validate_odds); docs/research/txline-onchain.md.
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub struct OddsUpdateStats {
+    pub update_count: u32,
+    pub min_timestamp: i64,
+    pub max_timestamp: i64,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub struct OddsBatchSummary {
+    pub fixture_id: i64,
+    pub update_stats: OddsUpdateStats,
+    pub odds_sub_tree_root: [u8; 32],
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub struct Odds {
+    pub fixture_id: i64,
+    pub message_id: String,
+    pub ts: i64,
+    pub bookmaker: String,
+    pub bookmaker_id: i32,
+    pub super_odds_type: String,
+    pub game_state: Option<String>,
+    pub in_running: bool,
+    pub market_parameters: Option<String>,
+    pub market_period: Option<String>,
+    pub price_names: Vec<String>,
+    pub prices: Vec<i32>,
+}
+
+// Anchor instruction discriminator = sha256("global:validate_odds")[0..8], stable across IDL
+// versions (derived from the name). sourceRef: txoracle devnet IDL v1.5.2 validate_odds.
+pub const VALIDATE_ODDS_DISCRIMINATOR: [u8; 8] = [192, 19, 91, 138, 104, 100, 212, 86];
+
+#[derive(AnchorSerialize)]
+struct ValidateOddsIxArgs {
+    ts: i64,
+    odds_snapshot: Odds,
+    summary: OddsBatchSummary,
+    sub_tree_proof: Vec<ProofNode>,
+    main_tree_proof: Vec<ProofNode>,
+}
+
+/// CPI into txoracle::validate_odds. It reads only daily_odds_merkle_roots and reverts on a bad
+/// proof or a missing root, so a call that returns proves the odds snapshot is a leaf of the
+/// published odds batch tree for its UTC day.
+#[allow(clippy::too_many_arguments)]
+pub fn cpi_validate_odds<'info>(
+    txline_program: AccountInfo<'info>,
+    daily_odds_merkle_roots: AccountInfo<'info>,
+    ts: i64,
+    odds_snapshot: Odds,
+    summary: OddsBatchSummary,
+    sub_tree_proof: Vec<ProofNode>,
+    main_tree_proof: Vec<ProofNode>,
+) -> Result<()> {
+    let args = ValidateOddsIxArgs {
+        ts,
+        odds_snapshot,
+        summary,
+        sub_tree_proof,
+        main_tree_proof,
+    };
+
+    let mut data = Vec::with_capacity(8);
+    data.extend_from_slice(&VALIDATE_ODDS_DISCRIMINATOR);
+    data.extend_from_slice(&args.try_to_vec()?);
+
+    let instruction = Instruction {
+        program_id: *txline_program.key,
+        accounts: vec![AccountMeta::new_readonly(*daily_odds_merkle_roots.key, false)],
+        data,
+    };
+    invoke(&instruction, &[daily_odds_merkle_roots, txline_program])?;
+    Ok(())
+}

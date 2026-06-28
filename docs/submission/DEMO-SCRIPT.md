@@ -85,7 +85,7 @@ and the trustless record."
 [SHOW] The architecture diagram or the repo README.
 [SAY] "Under the hood: a pure deterministic quant core, a resilient TxLINE client, an Anchor
 program for commit and settle, a headless agent with a read-only API, and this dashboard. Strict
-typing, errors as values, money as integers, 285 tests, and a security audit. Devnet and paper
+typing, errors as values, money as integers, 307 tests, and a security audit. Devnet and paper
 trading only. Everything is open source. Thanks for watching."
 
 ## Notes for editing

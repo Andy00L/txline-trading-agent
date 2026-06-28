@@ -12,6 +12,7 @@ export const anchorDiscriminator = (name: string): Uint8Array =>
 export const INITIALIZE_STRATEGY_DISCRIMINATOR = anchorDiscriminator('initialize_strategy');
 export const COMMIT_DECISION_DISCRIMINATOR = anchorDiscriminator('commit_decision');
 export const SETTLE_DECISION_DISCRIMINATOR = anchorDiscriminator('settle_decision');
+export const PROVE_ENTRY_ODDS_DISCRIMINATOR = anchorDiscriminator('prove_entry_odds');
 export const VOID_DECISION_DISCRIMINATOR = anchorDiscriminator('void_decision');
 
 // The txoracle CPI target. Its value is the golden that validates this whole module.

@@ -21,6 +21,21 @@ pub fn predicate_for_claim(claimed_result: u8) -> Option<(Comparison, i32)> {
     }
 }
 
+/// Whether a 1X2 price label is the canonical one for a sealed side, matching the feed's
+/// price_names for the result market: home is "1" or "part1", draw is "X" or "draw", away is "2"
+/// or "part2" (case-insensitive). Binds a proven price index to the committed side, so an
+/// entry-odds proof cannot point side_index at another outcome's price. sourceRef:
+/// packages/txline/src/map/odds.ts (1X2 label mapping).
+pub fn side_matches_label(side: u8, label: &str) -> bool {
+    let lowered = label.trim().to_lowercase();
+    match side {
+        SIDE_HOME => lowered == "1" || lowered == "part1",
+        SIDE_DRAW => lowered == "x" || lowered == "draw",
+        SIDE_AWAY => lowered == "2" || lowered == "part2",
+        _ => false,
+    }
+}
+
 /// Signed PnL in paper micro-USDC: profit stake*(odds-1) on a win, -stake on a loss.
 pub fn compute_pnl(won: bool, stake: u64, entry_odds_milli: u32) -> Option<i64> {
     if won {
@@ -73,6 +88,21 @@ mod tests {
         assert_eq!(predicate_for_claim(SIDE_DRAW), Some((Comparison::EqualTo, 0)));
         assert_eq!(predicate_for_claim(SIDE_AWAY), Some((Comparison::LessThan, 0)));
         assert_eq!(predicate_for_claim(7), None);
+    }
+
+    #[test]
+    fn side_label_binds_to_the_committed_side() {
+        assert!(side_matches_label(SIDE_HOME, "1"));
+        assert!(side_matches_label(SIDE_HOME, "part1"));
+        assert!(side_matches_label(SIDE_DRAW, "X"));
+        assert!(side_matches_label(SIDE_DRAW, "draw"));
+        assert!(side_matches_label(SIDE_AWAY, "2"));
+        assert!(side_matches_label(SIDE_AWAY, "part2"));
+        // A label for a different side, or an unknown side, never matches.
+        assert!(!side_matches_label(SIDE_HOME, "2"));
+        assert!(!side_matches_label(SIDE_AWAY, "part1"));
+        assert!(!side_matches_label(SIDE_DRAW, "1"));
+        assert!(!side_matches_label(7, "1"));
     }
 
     #[test]

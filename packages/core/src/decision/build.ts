@@ -25,6 +25,10 @@ export type BuildDecisionInput = {
   readonly riskContext: RiskContext;
   readonly nowMs: number;
   readonly feedTsMs: number;
+  /** Bounded market-decorrelation confidence weight on the Kelly stake (default 1, a no-op). The
+   * cross-market path sets it from the independent Elo rating's residual; it scales the stake
+   * within the Kelly cap and never sizes a position on its own. sourceRef: quant/elo.ts. */
+  readonly sizeMultiplier?: number;
 };
 
 /**
@@ -46,6 +50,7 @@ export const buildDecision = (
           input.signal.offeredOddsMilli,
           input.riskState.bankroll,
           config.kelly,
+          input.sizeMultiplier ?? 1,
         );
   if (!stakeResult.ok) {
     return stakeResult;

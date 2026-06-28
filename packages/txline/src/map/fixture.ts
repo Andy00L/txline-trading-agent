@@ -10,7 +10,9 @@ export const mapFixturePayload = (raw: Fixture): Result<FixtureUpdate, MapError>
     startTimeMs: raw.StartTime,
     competition: raw.Competition,
     competitionId: raw.CompetitionId,
+    participant1Id: raw.Participant1Id,
     participant1: raw.Participant1,
+    participant2Id: raw.Participant2Id,
     participant2: raw.Participant2,
     participant1IsHome: raw.Participant1IsHome,
   });

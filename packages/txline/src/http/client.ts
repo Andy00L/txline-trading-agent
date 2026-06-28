@@ -3,7 +3,12 @@ import { err, ok, type Prng, type Result } from '@txline-agent/core';
 import { parseWith } from '../parse.js';
 import { oddsPayloadSchema, type OddsPayload } from '../schemas/odds.js';
 import { scoresPayloadSchema, type ScoresPayload } from '../schemas/scores.js';
-import { scoresStatValidationSchema, type ScoresStatValidation } from '../schemas/proof.js';
+import {
+  oddsValidationSchema,
+  scoresStatValidationSchema,
+  type OddsValidation,
+  type ScoresStatValidation,
+} from '../schemas/proof.js';
 import { computeBackoffMs, DEFAULT_BACKOFF, type BackoffConfig } from './backoff.js';
 import type { HttpClient, HttpRequest, HttpResponse, TxlineError, TxlineErrorKind } from './types.js';
 
@@ -168,6 +173,16 @@ export class TxlineClient {
     const base = `${this.dataBaseUrl}/api/scores/stat-validation?fixtureId=${params.fixtureId}&seq=${params.seq}&statKey=${params.statKey}`;
     const url = params.statKey2 === undefined ? base : `${base}&statKey2=${params.statKey2}`;
     return this.getJson(url, scoresStatValidationSchema);
+  }
+
+  /** GET /api/odds/validation: the Merkle proof and snapshot for one odds update, keyed by its
+   * messageId and ts, to prove the committed entry price on-chain via prove_entry_odds. */
+  async getOddsValidation(params: {
+    readonly messageId: string;
+    readonly ts: number;
+  }): Promise<Result<OddsValidation, TxlineError>> {
+    const url = `${this.dataBaseUrl}/api/odds/validation?messageId=${encodeURIComponent(params.messageId)}&ts=${params.ts}`;
+    return this.getJson(url, oddsValidationSchema);
   }
 
   private async getJson<TSchema extends z.ZodTypeAny>(

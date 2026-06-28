@@ -51,6 +51,23 @@ export class BorshWriter {
     this.u32(length);
   }
 
+  /** Borsh string: a u32 byte-length prefix followed by the UTF-8 bytes. */
+  str(value: string): void {
+    const utf8 = new TextEncoder().encode(value);
+    this.vecLen(utf8.length);
+    this.bytes(utf8);
+  }
+
+  /** Borsh Option<String>: a 1-byte tag (0 None, 1 Some) then the string when present. */
+  optionStr(value: string | null): void {
+    if (value === null) {
+      this.u8(0);
+    } else {
+      this.u8(1);
+      this.str(value);
+    }
+  }
+
   finish(): Uint8Array {
     const total = this.parts.reduce((sum, part) => sum + part.length, 0);
     const out = new Uint8Array(total);

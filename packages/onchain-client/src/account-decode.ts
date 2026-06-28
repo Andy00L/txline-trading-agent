@@ -57,6 +57,8 @@ export type DecisionCommitAccount = {
   readonly outcomeSide: number;
   readonly pnl: bigint;
   readonly settleSlot: bigint;
+  /** Set once prove_entry_odds binds the sealed entry odds to a proven in-tree price. */
+  readonly entryOddsProven: boolean;
   readonly bump: number;
 };
 
@@ -68,8 +70,8 @@ export const STATUS_VOID = 2;
 // Body sizes after the 8-byte discriminator (state.rs InitSpace layout).
 // Strategy: 32+8+32+8+8+8+8+8+8+4+4+4+32+1 = 165.
 const STRATEGY_BODY_SIZE = 165;
-// DecisionCommit: 32+8+32+8+2+8+8+1+1+8+8+1.
-const DECISION_COMMIT_BODY_SIZE = 117;
+// DecisionCommit: 32+8+32+8+2+8+8+1+1+8+8+1+1 (the trailing entry_odds_proven bool then bump).
+const DECISION_COMMIT_BODY_SIZE = 118;
 
 class BorshReader {
   private offset = 0;
@@ -183,6 +185,7 @@ export const decodeDecisionCommitAccount = (
     outcomeSide: reader.u8(),
     pnl: reader.i64(),
     settleSlot: reader.u64(),
+    entryOddsProven: reader.u8() === 1,
     bump: reader.u8(),
   });
 };

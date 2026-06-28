@@ -8,6 +8,7 @@ import {
   type OddsLine,
 } from '../domain/market.js';
 import { DEFAULT_CROSS_MARKET_CONFIG } from '../signal/cross-market.js';
+import { DEFAULT_ELO_OVERLAY_CONFIG } from '../quant/elo.js';
 import { scorelineMatrix } from '../quant/poisson.js';
 import {
   DEFAULT_GOALS_MODEL_CONFIG,
@@ -20,6 +21,8 @@ import { runPipeline, type PipelineConfig } from './pipeline.js';
 import type { CommittedPosition, PipelineSink, SettledPosition } from './sink.js';
 
 const FIXTURE_ID = 17588302;
+const PARTICIPANT1_ID = 101;
+const PARTICIPANT2_ID = 202;
 const RHO = DEFAULT_GOALS_MODEL_CONFIG.rho;
 const MAX_GOALS = DEFAULT_GOALS_MODEL_CONFIG.maxGoals;
 
@@ -164,6 +167,28 @@ const finalScoreEvent = (seq: number, tsMs: number, home: number, away: number):
   },
 });
 
+// A fixtures-channel record naming the two participants, so the Elo overlay can key its ratings.
+const fixtureEvent = (seq: number, tsMs: number): FeedEvent => ({
+  kind: 'fixture',
+  envelope: {
+    source: 'replay',
+    seq,
+    receivedAtMs: tsMs,
+    payload: {
+      fixtureId: FIXTURE_ID,
+      tsMs,
+      startTimeMs: KICKOFF_MS,
+      competition: 'World Cup',
+      competitionId: 1,
+      participant1Id: PARTICIPANT1_ID,
+      participant1: 'Home',
+      participant2Id: PARTICIPANT2_ID,
+      participant2: 'Away',
+      participant1IsHome: true,
+    },
+  },
+});
+
 class ArrayFeed implements Feed {
   constructor(private readonly items: readonly FeedEvent[]) {}
   async *events(): AsyncIterable<FeedEvent> {
@@ -274,5 +299,75 @@ describe('runPipeline cross-market strategy', () => {
       JSON.stringify(value, (_key, item) => (typeof item === 'bigint' ? `${item}n` : item));
     expect(serialize(first.commits)).toBe(serialize(second.commits));
     expect(serialize(first.settles)).toBe(serialize(second.settles));
+  });
+
+  it('the decorrelation overlay lifts the stake on a corroborating rating and cuts it on a contradicting one', async () => {
+    // The same surface as the backed-leg case, plus a fixtures record so the overlay can key ratings
+    // to the participants. The seed sets the ratings directly (no prior finals), so the rating's
+    // residual against the market drives the stake multiplier, while the backed leg itself (chosen
+    // by the market-only fit) is identical across all three runs: the overlay sizes, it never picks.
+    const events = (): FeedEvent[] => [
+      fixtureEvent(0, 400),
+      scheduledScoreEvent(1, 500),
+      matchEvent(2, 1_000, matchLines(0.4, 2.7)),
+      oddsEvent(3, 60_000, 'over-under', overUnderKey(2.5), 2.5, overUnderLines(0.4, 3.4, 2.5)),
+      oddsEvent(4, 90_000, 'over-under', overUnderKey(3.5), 3.5, overUnderLines(0.4, 3.4, 3.5)),
+    ];
+    // Headroom on the caps so the Kelly stake, not a cap, sets the result and the bounded multiplier
+    // shows in the committed stake.
+    const headroom: PipelineConfig = {
+      ...config,
+      decision: {
+        ...config.decision,
+        kelly: { fraction: 0.5, maxFractionOfBankroll: 0.9 },
+        risk: {
+          ...config.decision.risk,
+          maxStakePerOrder: microUsdSaturating(900_000_000n),
+          perFixtureExposureCap: microUsdSaturating(900_000_000n),
+          perMarketExposureCap: microUsdSaturating(900_000_000n),
+          totalExposureCap: microUsdSaturating(900_000_000n),
+        },
+      },
+    };
+
+    const base = new RecordingSink();
+    await runPipeline(new ArrayFeed(events()), base, headroom);
+    const backed = base.commits[0]?.decision.outcome;
+    const baseStake = base.commits[0]?.decision.stake ?? 0n;
+    expect(backed === 'home' || backed === 'away').toBe(true);
+    expect(baseStake > 0n).toBe(true);
+
+    // A large rating edge for the backed side: its rating probability exceeds the market's, a
+    // positive residual that corroborates the back and lifts the stake.
+    const strongFor = (id: number): ReadonlyMap<number, number> =>
+      id === PARTICIPANT1_ID
+        ? new Map([
+            [PARTICIPANT1_ID, 1950],
+            [PARTICIPANT2_ID, 1350],
+          ])
+        : new Map([
+            [PARTICIPANT1_ID, 1350],
+            [PARTICIPANT2_ID, 1950],
+          ]);
+    const backedId = backed === 'home' ? PARTICIPANT1_ID : PARTICIPANT2_ID;
+    const otherId = backed === 'home' ? PARTICIPANT2_ID : PARTICIPANT1_ID;
+
+    const up = new RecordingSink();
+    await runPipeline(new ArrayFeed(events()), up, {
+      ...headroom,
+      eloOverlay: { ...DEFAULT_ELO_OVERLAY_CONFIG, seed: strongFor(backedId) },
+    });
+    expect(up.commits[0]?.decision.outcome).toBe(backed);
+    expect((up.commits[0]?.decision.stake ?? 0n) > baseStake).toBe(true);
+
+    // The mirror seed makes the backed side the weaker team: a negative residual that contradicts
+    // the back and cuts the stake.
+    const down = new RecordingSink();
+    await runPipeline(new ArrayFeed(events()), down, {
+      ...headroom,
+      eloOverlay: { ...DEFAULT_ELO_OVERLAY_CONFIG, seed: strongFor(otherId) },
+    });
+    expect(down.commits[0]?.decision.outcome).toBe(backed);
+    expect((down.commits[0]?.decision.stake ?? 0n) < baseStake).toBe(true);
   });
 });

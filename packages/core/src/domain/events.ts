@@ -42,14 +42,17 @@ export type ScoreUpdate = {
   readonly stats: ReadonlyMap<number, number>;
 };
 
-/** A normalized fixture record. */
+/** A normalized fixture record. The participant ids are stable across a team's matches, so
+ * they key the independent Elo ratings the decorrelation overlay reads. */
 export type FixtureUpdate = {
   readonly fixtureId: number;
   readonly tsMs: number;
   readonly startTimeMs: number;
   readonly competition: string;
   readonly competitionId: number;
+  readonly participant1Id: number;
   readonly participant1: string;
+  readonly participant2Id: number;
   readonly participant2: string;
   readonly participant1IsHome: boolean;
 };

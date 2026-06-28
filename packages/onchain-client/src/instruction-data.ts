@@ -4,10 +4,12 @@ import { BorshWriter } from './borsh-writer.js';
 import {
   COMMIT_DECISION_DISCRIMINATOR,
   INITIALIZE_STRATEGY_DISCRIMINATOR,
+  PROVE_ENTRY_ODDS_DISCRIMINATOR,
   SETTLE_DECISION_DISCRIMINATOR,
   VOID_DECISION_DISCRIMINATOR,
 } from './discriminators.js';
 import { encodeSettleArgs, type SettleArgsInput } from './settle-encode.js';
+import { encodeProveOddsArgs, type ProveOddsArgsInput } from './prove-odds-encode.js';
 import { checkI64, checkU8, checkU16, checkU64 } from './int-range.js';
 
 const withDiscriminator = (discriminator: Uint8Array, body: Uint8Array): Uint8Array => {
@@ -78,6 +80,17 @@ export const encodeSettleDecisionData = (args: SettleArgsInput): Result<Uint8Arr
     return encoded;
   }
   return ok(withDiscriminator(SETTLE_DECISION_DISCRIMINATOR, encoded.value));
+};
+
+/** Instruction data for prove_entry_odds: discriminator ++ borsh(ProveOddsArgs). */
+export const encodeProveEntryOddsData = (
+  args: ProveOddsArgsInput,
+): Result<Uint8Array, EncodeError> => {
+  const encoded = encodeProveOddsArgs(args);
+  if (!encoded.ok) {
+    return encoded;
+  }
+  return ok(withDiscriminator(PROVE_ENTRY_ODDS_DISCRIMINATOR, encoded.value));
 };
 
 /** Instruction data for void_decision: discriminator ++ borsh(RevealArgs) ++ reason. */

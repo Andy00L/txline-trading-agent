@@ -19,4 +19,8 @@ export type Signal = {
   readonly offeredOddsMilli: DecimalOddsMilli;
   readonly edge: number;
   readonly strength: number;
+  /** The de-vigged market fair probability for the backed outcome, when the signal exposes it
+   * (the cross-market path does). The market-decorrelation overlay reads it as the consensus the
+   * independent rating's residual is measured against; absent for paths that do not use it. */
+  readonly marketProb?: Prob;
 };

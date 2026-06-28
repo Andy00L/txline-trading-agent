@@ -4,6 +4,8 @@ export * from './commit-hash.js';
 export * from './discriminators.js';
 export * from './settle-encode.js';
 export * from './settle-args.js';
+export * from './prove-odds-encode.js';
+export * from './prove-odds-args.js';
 export * from './account-decode.js';
 export * from './pda.js';
 export * from './instruction-data.js';

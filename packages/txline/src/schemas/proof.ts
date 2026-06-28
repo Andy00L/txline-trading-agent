@@ -61,3 +61,46 @@ export const scoresStatValidationSchema = z.object({
   statProof2: proofListSchema.optional(),
 });
 export type ScoresStatValidation = z.infer<typeof scoresStatValidationSchema>;
+
+/**
+ * Odds snapshot inside the GET /api/odds/validation response. Like the odds feed it uses
+ * PascalCase field names. Only the seven fields the OpenAPI marks required are required; the
+ * optional strings and the parallel PriceNames/Prices arrays are nullish (defaulted to empty when
+ * the on-chain proof is built). sourceRef: ~/.txline-recon/odds-merkle-proof.md (OddsValidation).
+ */
+export const oddsSnapshotSchema = z.object({
+  FixtureId: z.number().int(),
+  MessageId: z.string(),
+  Ts: z.number().int(),
+  Bookmaker: z.string(),
+  BookmakerId: z.number().int(),
+  SuperOddsType: z.string(),
+  GameState: z.string().nullish(),
+  InRunning: z.boolean(),
+  MarketParameters: z.string().nullish(),
+  MarketPeriod: z.string().nullish(),
+  PriceNames: z.array(z.string()).nullish(),
+  Prices: z.array(z.number().int()).nullish(),
+});
+export type OddsSnapshot = z.infer<typeof oddsSnapshotSchema>;
+
+export const oddsUpdateStatsSchema = z.object({
+  updateCount: z.number().int(),
+  minTimestamp: z.number().int(),
+  maxTimestamp: z.number().int(),
+});
+
+export const oddsBatchSummarySchema = z.object({
+  fixtureId: z.number().int(),
+  updateStats: oddsUpdateStatsSchema,
+  oddsSubTreeRoot: byte32Schema,
+});
+export type OddsBatchSummary = z.infer<typeof oddsBatchSummarySchema>;
+
+export const oddsValidationSchema = z.object({
+  odds: oddsSnapshotSchema,
+  summary: oddsBatchSummarySchema,
+  subTreeProof: proofListSchema,
+  mainTreeProof: proofListSchema,
+});
+export type OddsValidation = z.infer<typeof oddsValidationSchema>;

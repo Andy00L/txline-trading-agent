@@ -7,9 +7,12 @@ pub mod state;
 pub mod txline_cpi;
 
 use errors::AgentError;
-use logic::{apply_pnl, compute_commit_hash, compute_pnl, epoch_day_le, predicate_for_claim};
+use logic::{
+    apply_pnl, compute_commit_hash, compute_pnl, epoch_day_le, predicate_for_claim,
+    side_matches_label,
+};
 use state::*;
-use txline_cpi::{cpi_validate_stat, BinaryExpression, TraderPredicate};
+use txline_cpi::{cpi_validate_odds, cpi_validate_stat, BinaryExpression, TraderPredicate};
 
 declare_id!("FLZiKMUaPAGMtPLbfHvHwfiVfkTZD8RZ84CSrkDy1kLD");
 
@@ -71,6 +74,7 @@ pub mod agent_ledger {
         decision.outcome_side = 0;
         decision.pnl = 0;
         decision.settle_slot = 0;
+        decision.entry_odds_proven = false;
         decision.bump = ctx.bumps.decision;
 
         strategy.commit_log_root =
@@ -201,6 +205,104 @@ pub mod agent_ledger {
         Ok(())
     }
 
+    /// Prove the sealed entry odds were a real published price. Run after settle (the reveal is
+    /// public by then), it re-checks the commit hash, binds the snapshot's price for the committed
+    /// side to the sealed entry_odds_milli, re-derives the odds-roots PDA, and CPIs into
+    /// validate_odds. The flag is set only if the snapshot is a leaf of the published odds tree, so
+    /// the entry price cannot be backfilled any more than the outcome can.
+    pub fn prove_entry_odds(ctx: Context<ProveEntryOdds>, args: ProveOddsArgs) -> Result<()> {
+        // Entry odds become public only at settle (the reveal is submitted then), so the price is
+        // bound to a proof after settlement; this also keeps the unbounded odds proof out of the
+        // settle transaction's own compute budget.
+        require!(ctx.accounts.decision.status == STATUS_SETTLED, AgentError::NotSettled);
+        require!(!ctx.accounts.decision.entry_odds_proven, AgentError::OddsAlreadyProven);
+
+        // The reveal must reproduce the sealed commit hash, so the entry_odds_milli bound below is
+        // the committed one, not a substituted value.
+        let computed = compute_commit_hash(&args.reveal)?;
+        require!(computed == ctx.accounts.decision.commit_hash, AgentError::CommitMismatch);
+        require!(
+            args.reveal.fixture_id == ctx.accounts.decision.fixture_id
+                && args.reveal.market == ctx.accounts.decision.market
+                && args.reveal.strategy == ctx.accounts.strategy.key(),
+            AgentError::RoutingMismatch
+        );
+        require!(
+            matches!(args.reveal.side, SIDE_HOME | SIDE_DRAW | SIDE_AWAY),
+            AgentError::InvalidSide
+        );
+
+        // Bind the proven snapshot to THIS decision's fixture and the 1X2 result market, so a
+        // snapshot from another fixture or market cannot stand in.
+        require!(
+            args.odds_snapshot.fixture_id == ctx.accounts.decision.fixture_id,
+            AgentError::FixtureMismatch
+        );
+        require!(
+            args.odds_snapshot.super_odds_type == SUPER_ODDS_TYPE_1X2,
+            AgentError::OddsMarketMismatch
+        );
+
+        // Bind the sealed entry odds to the proven price for the committed side: price_names and
+        // prices must align, side_index must carry the canonical label for the sealed side, and the
+        // price there must equal entry_odds_milli (the feed prices are decimal odds x1000, the same
+        // scale as the sealed entry odds).
+        let side_index = args.side_index as usize;
+        require!(
+            args.odds_snapshot.price_names.len() == args.odds_snapshot.prices.len()
+                && side_index < args.odds_snapshot.price_names.len(),
+            AgentError::OddsIndexOutOfRange
+        );
+        require!(
+            side_matches_label(args.reveal.side, &args.odds_snapshot.price_names[side_index]),
+            AgentError::OddsSideMismatch
+        );
+        let price = args.odds_snapshot.prices[side_index];
+        require!(
+            price >= 0 && (price as u32) == args.reveal.entry_odds_milli,
+            AgentError::OddsPriceMismatch
+        );
+
+        require_keys_eq!(
+            ctx.accounts.txline_program.key(),
+            ctx.accounts.strategy.txline_program,
+            AgentError::TxlineProgramMismatch
+        );
+        // Re-derive the daily odds-roots PDA from the odds ts (seed prefix "daily_batch_roots", the
+        // same epoch-day math as the scores roots) and verify it, so the CPI reads the real
+        // published odds root. sourceRef: docs/research/txline-onchain.md (odds roots PDA).
+        let epoch_day = epoch_day_le(args.ts).ok_or(AgentError::InvalidRootsPda)?;
+        let (expected_roots, _bump) = Pubkey::find_program_address(
+            &[b"daily_batch_roots", &epoch_day],
+            &ctx.accounts.strategy.txline_program,
+        );
+        require_keys_eq!(
+            ctx.accounts.daily_odds_merkle_roots.key(),
+            expected_roots,
+            AgentError::InvalidRootsPda
+        );
+
+        // Prove the snapshot is a leaf of the published odds batch tree. Reverts the whole
+        // instruction on a bad proof or a missing root, so a returning call binds the price.
+        cpi_validate_odds(
+            ctx.accounts.txline_program.to_account_info(),
+            ctx.accounts.daily_odds_merkle_roots.to_account_info(),
+            args.ts,
+            args.odds_snapshot,
+            args.summary,
+            args.sub_tree_proof,
+            args.main_tree_proof,
+        )?;
+
+        let decision = &mut ctx.accounts.decision;
+        decision.entry_odds_proven = true;
+        emit!(DecisionOddsProven {
+            strategy: ctx.accounts.strategy.key(),
+            index: decision.index,
+        });
+        Ok(())
+    }
+
     /// Void a postponed or abandoned decision within the grace window. Requires the
     /// reveal to match, so a void cannot rewrite the sealed decision.
     pub fn void_decision(ctx: Context<VoidDecision>, reveal: RevealArgs, _reason: u8) -> Result<()> {
@@ -286,6 +388,24 @@ pub struct SettleDecision<'info> {
     pub txline_program: UncheckedAccount<'info>,
     /// CHECK: re-derived from ts and verified in the handler; read-only, read by the CPI.
     pub daily_scores_merkle_roots: UncheckedAccount<'info>,
+}
+
+#[derive(Accounts)]
+pub struct ProveEntryOdds<'info> {
+    pub authority: Signer<'info>,
+    #[account(has_one = authority)]
+    pub strategy: Account<'info, Strategy>,
+    #[account(
+        mut,
+        has_one = strategy,
+        seeds = [COMMIT_SEED, strategy.key().as_ref(), &decision.index.to_le_bytes()],
+        bump = decision.bump,
+    )]
+    pub decision: Account<'info, DecisionCommit>,
+    /// CHECK: pinned and verified against strategy.txline_program in the handler.
+    pub txline_program: UncheckedAccount<'info>,
+    /// CHECK: re-derived from the odds ts and verified in the handler; read-only, read by the CPI.
+    pub daily_odds_merkle_roots: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]

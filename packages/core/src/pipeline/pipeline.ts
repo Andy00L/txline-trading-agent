@@ -2,11 +2,17 @@ import { buildDecision, type DecisionConfig } from '../decision/build.js';
 import type { Decision } from '../domain/decision.js';
 import type { DevigMethod, FairBook } from '../domain/fairbook.js';
 import { fairProbOf } from '../domain/fairbook.js';
-import type { OddsUpdate, ScoreUpdate } from '../domain/events.js';
+import type { FixtureUpdate, OddsUpdate, ScoreUpdate } from '../domain/events.js';
 import { OUTCOMES_1X2, type MarketKey, type OddsLine, type Outcome } from '../domain/market.js';
 import { isFinalGameState } from '../domain/score-state.js';
 import type { Feed, FeedEnvelope } from '../feed.js';
 import { computeFairBook } from '../quant/devig.js';
+import {
+  applyEloMatch,
+  decorrelationMultiplier,
+  eloMatchProbs,
+  type EloOverlayConfig,
+} from '../quant/elo.js';
 import { createRiskState, onCommit, onSettlement } from '../risk/manager.js';
 import { computePnl } from '../risk/pnl.js';
 import type { RiskState } from '../risk/types.js';
@@ -22,7 +28,8 @@ import {
   type CrossMarketConfig,
   type OverUnderMarket,
 } from '../signal/cross-market.js';
-import type { DecimalOddsMilli, MicroUsd, Prob } from '../units.js';
+import type { Signal } from '../signal/types.js';
+import { clampProb, type DecimalOddsMilli, type MicroUsd, type Prob } from '../units.js';
 import type { CommittedPosition, PipelineSink, SettledPosition } from './sink.js';
 
 export type PipelineConfig = {
@@ -37,6 +44,10 @@ export type PipelineConfig = {
    * fixture, sized by the goals-model edge) instead of the per-market steam/divergence path.
    * sourceRef: docs/research/quant-methods.md (cross-market relative value). */
   readonly crossMarket?: CrossMarketConfig;
+  /** When set (cross-market path only), an independent Elo rating modulates the cross-market
+   * stake through its market-decorrelated residual: a bounded confidence weight, never a gate.
+   * Absent leaves the stake untouched. sourceRef: quant/elo.ts; docs/research/quant-methods.md. */
+  readonly eloOverlay?: EloOverlayConfig;
 };
 
 export type PipelineResult = {
@@ -83,6 +94,13 @@ type PipelineState = {
    * to the near-kickoff window. */
   readonly fixtureStartMs: Map<number, number>;
   readonly scores: Map<number, ScoreState>;
+  /** Participant (team) ids per fixture, from the fixtures channel, keying the Elo ratings. */
+  readonly fixtureTeams: Map<number, { readonly p1Id: number; readonly p2Id: number }>;
+  /** Independent Elo ratings by participant id, seeded then evolved walk-forward from finalized
+   * results; read by the decorrelation overlay, empty when the overlay is off. */
+  readonly eloRatings: Map<number, number>;
+  /** Fixtures already folded into the Elo ratings, so each finalized result updates them once. */
+  readonly ratedFixtures: Set<number>;
   readonly open: OpenPosition[];
   readonly actedMarkets: Set<MarketKey>;
   /** Fixtures already acted on by the cross-market path, so at most one decision is taken
@@ -262,6 +280,33 @@ const handleOdds = async (
 };
 
 /**
+ * The bounded market-decorrelation stake multiplier for a cross-market signal: map the fixture's
+ * two participants to their independent Elo ratings, take the rating's probability for the backed
+ * outcome (participant 1 is the home side), and weigh it against the market consensus the signal
+ * exposes. Returns 1 (a no-op) when the overlay is off, the signal carries no market consensus, or
+ * the fixture's participants are not yet known. sourceRef: quant/elo.ts.
+ */
+const crossMarketSizeMultiplier = (
+  state: PipelineState,
+  signal: Signal,
+  overlay: EloOverlayConfig | undefined,
+): number => {
+  if (overlay === undefined || signal.marketProb === undefined) {
+    return 1;
+  }
+  const teams = state.fixtureTeams.get(signal.fixtureId);
+  if (teams === undefined) {
+    return 1;
+  }
+  const ratingHome = state.eloRatings.get(teams.p1Id) ?? overlay.elo.initialRating;
+  const ratingAway = state.eloRatings.get(teams.p2Id) ?? overlay.elo.initialRating;
+  const probs = eloMatchProbs(ratingHome, ratingAway, overlay.neutral, overlay.elo, overlay.prob);
+  const ratingProb =
+    signal.outcome === 'home' ? probs.home : signal.outcome === 'draw' ? probs.draw : probs.away;
+  return decorrelationMultiplier(clampProb(ratingProb), signal.marketProb, overlay.decorrelation);
+};
+
+/**
  * Fold one full-game odds update into the fixture's joined surface (1X2 + Over/Under), and
  * if the cross-market goals model finds a 1X2 leg priced longer than the joint fit implies
  * and it clears the risk manager, commit one decision. At most one decision is taken per
@@ -361,13 +406,15 @@ const handleCrossMarketOdds = async (
   if (!signalResult.ok || signalResult.value === null) {
     return 0;
   }
+  const signal = signalResult.value;
   const built = buildDecision(
     {
-      signal: signalResult.value,
+      signal,
       riskState: state.riskState,
-      riskContext: { consensusFairProb: signalResult.value.fairProb, dispersion: 0 },
+      riskContext: { consensusFairProb: signal.fairProb, dispersion: 0 },
       nowMs,
       feedTsMs: odds.tsMs,
+      sizeMultiplier: crossMarketSizeMultiplier(state, signal, config.eloOverlay),
     },
     config.decision,
   );
@@ -422,6 +469,60 @@ const handleScore = (state: PipelineState, score: ScoreUpdate): void => {
     seq: score.seq,
     gameState: score.gameState,
   });
+};
+
+/**
+ * Capture a fixture's participants from the fixtures channel, so the Elo overlay can key its
+ * ratings by stable team id. Idempotent: a later record for the same fixture refreshes the map.
+ */
+const handleFixture = (state: PipelineState, fixture: FixtureUpdate): void => {
+  state.fixtureTeams.set(fixture.fixtureId, {
+    p1Id: fixture.participant1Id,
+    p2Id: fixture.participant2Id,
+  });
+};
+
+/**
+ * Fold one fixture's final result into the Elo ratings, once. This runs only at the final whistle,
+ * after any decision on this fixture was committed pre-kickoff, so the ratings a fixture's own
+ * decision reads reflect only earlier finalized matches (strictly walk-forward). A fixture whose
+ * participants never arrived on the fixtures channel is skipped, since its teams cannot be keyed.
+ */
+const updateRatingsForFinal = (
+  state: PipelineState,
+  fixtureId: number,
+  overlay: EloOverlayConfig | undefined,
+): void => {
+  if (overlay === undefined || state.ratedFixtures.has(fixtureId)) {
+    return;
+  }
+  const teams = state.fixtureTeams.get(fixtureId);
+  const score = state.scores.get(fixtureId);
+  if (teams === undefined || score === undefined) {
+    return;
+  }
+  state.ratedFixtures.add(fixtureId);
+  const updated = applyEloMatch(
+    state.eloRatings,
+    {
+      homeTeam: teams.p1Id,
+      awayTeam: teams.p2Id,
+      homeGoals: score.homeGoals,
+      awayGoals: score.awayGoals,
+      neutral: overlay.neutral,
+    },
+    overlay.elo,
+  );
+  // applyEloMatch only changes the two participants; apply those in place so the rating table
+  // reference on the state stays stable.
+  const ratingHome = updated.get(teams.p1Id);
+  const ratingAway = updated.get(teams.p2Id);
+  if (ratingHome !== undefined) {
+    state.eloRatings.set(teams.p1Id, ratingHome);
+  }
+  if (ratingAway !== undefined) {
+    state.eloRatings.set(teams.p2Id, ratingAway);
+  }
 };
 
 /**
@@ -557,6 +658,9 @@ export const runPipeline = async (
     surfaces: new Map(),
     fixtureStartMs: new Map(),
     scores: new Map(),
+    fixtureTeams: new Map(),
+    eloRatings: new Map<number, number>(config.eloOverlay?.seed ?? []),
+    ratedFixtures: new Set(),
     open: [],
     actedMarkets: new Set(),
     actedFixtures: new Set(),
@@ -576,8 +680,11 @@ export const runPipeline = async (
       const score = event.envelope.payload;
       handleScore(state, score);
       if (isFinalGameState(score.gameState)) {
+        updateRatingsForFinal(state, score.fixtureId, config.eloOverlay);
         await settleFinalFixture(state, score.fixtureId, sink);
       }
+    } else if (event.kind === 'fixture') {
+      handleFixture(state, event.envelope.payload);
     }
   }
   await settleAll(state, sink);
