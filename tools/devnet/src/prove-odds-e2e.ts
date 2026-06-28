@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { SeededPrng } from '@txline-agent/core';
 import {
   FetchHttpClient,
@@ -200,7 +201,7 @@ const findOneX2OddsUpdate = async (
 
 // A fully resolved proof target: a fixture with a final score AND a fetched, validating 1X2 odds
 // snapshot, plus the backed side and its sealed entry price (the published price for that side).
-type ProofTarget = {
+export type ProofTarget = {
   readonly fixtureId: number;
   readonly seq: number;
   readonly scoreValidation: ScoresStatValidation;
@@ -284,7 +285,7 @@ const resolveProofTarget = async (
 // odds have aged out of the validation window (the common case for an older fixture), discover a
 // recently finished World Cup fixture that still has a fresh 1X2 odds proof. A decisive (non-draw)
 // result is preferred so the demo backs a clear winner, but a draw is accepted if that is all there is.
-const selectProofTarget = async (
+export const selectProofTarget = async (
   txline: TxlineClient,
   envFixtureId: number,
   envSeq: number,
@@ -578,7 +579,11 @@ const main = async (): Promise<void> => {
   );
 };
 
-main().catch((error: unknown) => {
-  console.error(`[prove-odds-e2e] fatal: ${error instanceof Error ? error.message : String(error)}`);
-  process.exit(1);
-});
+// Auto-run only when executed directly (node dist/prove-odds-e2e.js), not when imported by another
+// devnet script. prove-odds-live.ts reuses selectProofTarget to drive the live OnChainSink.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch((error: unknown) => {
+    console.error(`[prove-odds-e2e] fatal: ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  });
+}

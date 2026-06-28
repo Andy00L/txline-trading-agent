@@ -111,7 +111,10 @@ Implemented:
   and proving it; the settle still stands as the second link if the record has aged out of the
   validation window). `prove:e2e` proved an entry price against the published odds Merkle root (a
   `DecisionOddsProven` decision) and rejected a tampered price, so all three trust links (commit,
-  prove entry odds, settle) run on the live program.
+  prove entry odds, settle) run on the live program. The live `OnChainSink` path itself was then run
+  end to end on devnet by `prove:live` (commit, CPI-settle, then the entry-odds proof), with the
+  `validate_odds` transaction finalized on-chain, so the third link is observed in the production
+  sink, not only in unit tests.
 - Layer an independent rating on, decorrelated. A frozen World Football Elo rating is added not as a
   goals-model fit prior (which double-counts the market) but as a market-decorrelation overlay: the
   agent acts only on the rating's residual after orthogonalizing against the consensus, as a bounded

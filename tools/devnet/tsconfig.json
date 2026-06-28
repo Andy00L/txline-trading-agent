@@ -9,6 +9,7 @@
     { "path": "../../packages/core" },
     { "path": "../../packages/txline" },
     { "path": "../../packages/onchain-client" },
+    { "path": "../../packages/agent" },
     { "path": "../../packages/backtest" }
   ]
 }

@@ -47,7 +47,9 @@ trust chain is proven on devnet (commit before reveal, CPI-settle, and three rej
 tampered root, mismatched fixture, swapped stats). The entry-odds proof is deployed and proven on
 devnet, and the live agent now runs it after each settle (best-effort): `prove_entry_odds` proved a
 sealed entry price against the published odds Merkle root (a `DecisionOddsProven` decision) and
-rejected a tampered price via `prove:e2e`. A
+rejected a tampered price via `prove:e2e`. The live `OnChainSink` path itself was run end to end on
+devnet by `prove:live` (commit, CPI-settle, then `validate_odds`), with the entry-odds proof
+transaction finalized on-chain. A
 security audit ([docs/audit/M8-audit.md](docs/audit/M8-audit.md)) closed two
 critical settlement trust gaps, which are fixed, deployed, and re-proven on-chain; the later
 hardening pass added defense-in-depth (a sealed-side guard, a checked epoch-day derivation,
@@ -58,6 +60,7 @@ tests.
 | --- | --- |
 | `agent_ledger` program | [`FLZiKMUaPAGMtPLbfHvHwfiVfkTZD8RZ84CSrkDy1kLD`](https://explorer.solana.com/address/FLZiKMUaPAGMtPLbfHvHwfiVfkTZD8RZ84CSrkDy1kLD?cluster=devnet) |
 | Entry-odds proof (`DecisionOddsProven`) | [proven on devnet](https://explorer.solana.com/tx/3K5ZUFMMvrDCnziaE7MVUR7ApFekL2BKggFwB11vSCCaDqBg9MAQbs3piB74vMXp2np8srhfsCeNA8m8w9SFdJVq?cluster=devnet) |
+| Live-sink entry-odds proof (`prove:live`) | [`validate_odds` finalized on devnet](https://explorer.solana.com/tx/62fDJdYXD68YgrezTU5TFtSP7HuvT8sn3zPe8L8MQ99me1PFiumpGGgu6fKWtZiYCSvS4KLB9VzcDtK6c1iffi4Y?cluster=devnet) |
 | TxLINE `txoracle` (CPI target) | `6pW64gN1s2uqjHkn1unFeEjAwJkPGHoppGvS715wyP2J` |
 | Strategy authority wallet | `8SafovV7444FGu3fGUJDWiqkrwsLpamsCH7buQyjKe5P` |
 

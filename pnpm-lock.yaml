@@ -107,6 +107,9 @@ importers:
 
   tools/devnet:
     dependencies:
+      '@txline-agent/agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
       '@txline-agent/backtest':
         specifier: workspace:*
         version: link:../../packages/backtest
