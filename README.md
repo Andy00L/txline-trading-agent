@@ -1,10 +1,10 @@
 # 🤖 TxLINE autonomous odds-trading agent
 
-![Tests](https://img.shields.io/badge/tests-314%20passing-1F8A5B) ![Solana](https://img.shields.io/badge/Solana-devnet-2B5FD9) ![Mode](https://img.shields.io/badge/mode-paper%20trading-6B7280) ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6) ![Anchor](https://img.shields.io/badge/Anchor-0.31-512BD4)
+![Tests](https://img.shields.io/badge/tests-320%20passing-1F8A5B) ![Solana](https://img.shields.io/badge/Solana-devnet-2B5FD9) ![Mode](https://img.shields.io/badge/mode-paper%20trading-6B7280) ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6) ![Anchor](https://img.shields.io/badge/Anchor-0.31-512BD4)
 
-![TxLINE agent operator dashboard: live feed status, the ingest to settle pipeline, and the committed and settled position ledger with on-chain Verified on Solana stamps](docs/assets/dashboard.png)
+![TxLINE agent operator dashboard: live feed status, a commit to settle to proven trust-chain band, the ingest-to-settle pipeline, an equity curve and a per-bet closing-line-value chart, and the position ledger with per-decision proof receipts and on-chain Verified on Solana stamps](docs/assets/dashboard.png)
 
-> The operator console: live feed status, the ingest-to-settle pipeline, and the position ledger with on-chain "Verified on Solana" stamps.
+> The operator console: the commit -> settle -> proven trust chain, live equity and closing-line-value charts, and a per-decision proof receipt (the sealed commit hash, the `validate_stat` predicate, and the `validate_odds` entry-odds proof), each linking to its Solana transaction.
 
 An autonomous, deterministic agent that ingests the live TxLINE World Cup feed (odds and
 scores, Merkle-anchored on Solana), trades a **cross-market relative-value strategy** across the
@@ -39,14 +39,15 @@ live behaviour, not a separate script.
 
 M0-M9 complete, followed by a review-and-harden pass, a cross-market strategy upgrade (a
 goals-model relative-value signal across the full odds surface, replacing steam-following), an
-independent Elo market-decorrelation stake overlay, and an implemented on-chain entry-odds proof
-(`prove_entry_odds` via `txoracle::validate_odds`). **302 TypeScript tests + 12 Rust tests (314
-total), all green**, with `typecheck`, `lint`, a coding-standards gate, and a core-purity gate all
-passing. The `agent_ledger` program is deployed and the full settle trust chain is proven on devnet
-(commit before reveal, CPI-settle, and three rejection cases: tampered root, mismatched fixture,
-swapped stats). The entry-odds proof is now deployed and proven on devnet too: `prove_entry_odds`
-proved a sealed entry price against the published odds Merkle root (a `DecisionOddsProven`
-decision) and rejected a tampered price, both via `prove:e2e`. A
+independent Elo market-decorrelation stake overlay, and an on-chain entry-odds proof
+(`prove_entry_odds` via `txoracle::validate_odds`) wired into the live agent loop. **308 TypeScript
+tests + 12 Rust tests (320 total), all green**, with `typecheck`, `lint`, a coding-standards gate,
+and a core-purity gate all passing. The `agent_ledger` program is deployed and the full settle
+trust chain is proven on devnet (commit before reveal, CPI-settle, and three rejection cases:
+tampered root, mismatched fixture, swapped stats). The entry-odds proof is deployed and proven on
+devnet, and the live agent now runs it after each settle (best-effort): `prove_entry_odds` proved a
+sealed entry price against the published odds Merkle root (a `DecisionOddsProven` decision) and
+rejected a tampered price via `prove:e2e`. A
 security audit ([docs/audit/M8-audit.md](docs/audit/M8-audit.md)) closed two
 critical settlement trust gaps, which are fixed, deployed, and re-proven on-chain; the later
 hardening pass added defense-in-depth (a sealed-side guard, a checked epoch-day derivation,
@@ -90,7 +91,7 @@ and [docs/runbooks/M4-devnet.md](docs/runbooks/M4-devnet.md).
 
 ```bash
 pnpm install
-pnpm verify            # typecheck + 302 tests + lint + standards + core-purity, all green
+pnpm verify            # typecheck + 308 tests + lint + standards + core-purity, all green
 ```
 
 Run the backtest (the proof centerpiece; needs the TxLINE token). `backtest:sweep` aggregates the
@@ -166,14 +167,16 @@ with and without it so the effect is measured, not assumed.
 `validate_stat`; it binds the proof to the committed fixture and pins the participant goal stat
 keys, so a settle cannot substitute a fixture or swap stats to fabricate a result.
 
-An implemented, offline-verified extension, `prove_entry_odds`, proves the **entry price** too:
-after settle it re-checks the sealed reveal, binds the snapshot's price for the committed side to
+`prove_entry_odds` proves the **entry price** too, and the live agent now runs it after each settle:
+it re-discovers the sealed entry odds record, binds the snapshot's price for the committed side to
 the sealed entry odds, re-derives the daily odds-roots PDA, and CPIs into `txoracle::validate_odds`
 against the published odds Merkle root, so the committed entry price cannot be backfilled any more
-than the outcome can. It is covered by program tests and a cross-language borsh golden, and is now
-deployed and proven on devnet: `prove:e2e` proved an entry price against the published odds Merkle
-root (a `DecisionOddsProven` decision) and rejected a tampered price, so all three trust links run
-on the live program. The operator dashboard surfaces this as a per-decision **resolution receipt**
+than the outcome can. It is best-effort (the settle still stands if the entry record has aged out of
+the validation window), covered by program tests, agent tests, and a cross-language borsh golden,
+and is deployed and proven on devnet: `prove:e2e` proved an entry price against the published odds
+Merkle root (a `DecisionOddsProven` decision) and rejected a tampered price, so all three trust
+links run on the live program and in the live loop after each settle. The operator dashboard
+surfaces this as a per-decision **resolution receipt**
 (the sealed commit hash, the revealed fields, the `validate_stat` predicate, and the settle CPI,
 each linking to its transaction), next to a live equity curve and a per-bet closing-line-value
 chart. Verification type details and the

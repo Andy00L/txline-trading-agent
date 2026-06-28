@@ -94,7 +94,8 @@ account re-derived from the proof timestamp.
 
 ## Extensions: two now implemented, one scoped
 
-Two extensions the design accommodated are now built and verified offline; the third is scoped.
+Two extensions the design accommodated are now built (the entry-odds proof is wired into the live
+agent loop); the third is scoped.
 
 Implemented:
 
@@ -105,9 +106,12 @@ Implemented:
   inputs and outcomes are both proven against TxODDS's own roots. It is covered by program tests and
   a cross-language borsh golden, and is sized to a legacy transaction (worst-case about 886 bytes of
   instruction data, under the 1232-byte limit, measured on a real proof), so no Address Lookup Table
-  is needed. It is now deployed and proven on devnet: `prove:e2e` proved an entry price against the
-  published odds Merkle root (a `DecisionOddsProven` decision) and rejected a tampered price, so all
-  three trust links (commit, prove entry odds, settle) run on the live program.
+  is needed. It is now deployed and proven on devnet, and wired into the live agent loop: the sink
+  runs `prove_entry_odds` after each settle (best-effort, re-discovering the sealed entry odds record
+  and proving it; the settle still stands as the second link if the record has aged out of the
+  validation window). `prove:e2e` proved an entry price against the published odds Merkle root (a
+  `DecisionOddsProven` decision) and rejected a tampered price, so all three trust links (commit,
+  prove entry odds, settle) run on the live program.
 - Layer an independent rating on, decorrelated. A frozen World Football Elo rating is added not as a
   goals-model fit prior (which double-counts the market) but as a market-decorrelation overlay: the
   agent acts only on the rating's residual after orthogonalizing against the consensus, as a bounded

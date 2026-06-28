@@ -43,6 +43,9 @@ const settleView = (index: number, won: boolean, pnlMicroUsd: string): SettleVie
   clvProb: 0.02,
   txSig: `settle-${index}`,
   explorerUrl: `https://explorer/settle/${index}`,
+  entryOddsProven: false,
+  oddsProofTxSig: null,
+  oddsProofExplorerUrl: null,
 });
 
 describe('AgentStateStore', () => {
@@ -71,6 +74,21 @@ describe('AgentStateStore', () => {
     expect(snapshot.settlesCount).toBe(0);
     expect(snapshot.errorsCount).toBe(1);
     expect(snapshot.bankrollMicroUsd).toBe('1000000000');
+  });
+
+  it('records the entry-odds proof on a settled position and ignores an unsettled one', () => {
+    const store = new AgentStateStore({ clock: new FixedClock(), startingBankroll: 0n });
+    store.recordCommit(commitView(0));
+    store.markSettled(0, settleView(0, true, '26000000'));
+    store.markOddsProven(0, { txSig: 'odds-sig', explorerUrl: 'https://explorer/odds/0' });
+
+    const proven = store.snapshot();
+    expect(proven.positions[0]?.settlement?.entryOddsProven).toBe(true);
+    expect(proven.positions[0]?.settlement?.oddsProofTxSig).toBe('odds-sig');
+
+    // A proof for an unknown index records an error rather than a phantom update.
+    store.markOddsProven(99, { txSig: 'x', explorerUrl: 'y' });
+    expect(store.snapshot().errorsCount).toBe(1);
   });
 
   it('redacts a secret RPC URL from a recorded error', () => {

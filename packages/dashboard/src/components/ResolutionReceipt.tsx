@@ -54,6 +54,19 @@ export const ResolutionReceipt = ({ position }: { readonly position: PositionVie
               </span>
               <ExplorerLink url={settlement.explorerUrl} label="settle tx" />
             </li>
+            {settlement.entryOddsProven && (
+              <li className="receipt-step-proof">
+                <span className="receipt-step-title">Entry price proven</span>
+                <span className="receipt-step-body">
+                  the sealed entry price was confirmed a real published quote by CPI into{' '}
+                  <span className="ss-mono">txoracle::validate_odds</span> against the daily odds Merkle
+                  root, so inputs and outcome are both proven.
+                </span>
+                {settlement.oddsProofExplorerUrl !== null && (
+                  <ExplorerLink url={settlement.oddsProofExplorerUrl} label="prove-odds tx" />
+                )}
+              </li>
+            )}
             <li className="receipt-step-proof">
               <span className="receipt-step-title">PnL written only because the proof passed</span>
               <span

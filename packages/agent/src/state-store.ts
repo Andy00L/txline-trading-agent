@@ -46,6 +46,11 @@ export type SettleView = {
   readonly clvProb: number;
   readonly txSig: string;
   readonly explorerUrl: string;
+  // The third trust link: set when prove_entry_odds proves the sealed entry price on-chain after
+  // settle. entryOddsProven stays false until then; the odds-proof tx links to the validate_odds CPI.
+  readonly entryOddsProven: boolean;
+  readonly oddsProofTxSig: string | null;
+  readonly oddsProofExplorerUrl: string | null;
 };
 
 export type AgentErrorView = { readonly stage: string; readonly detail: string; readonly atMs: number };
@@ -132,6 +137,23 @@ export class AgentStateStore {
     entry.settlement = settlement;
     this.settlesCount += 1;
     this.realizedPnl += BigInt(settlement.pnlMicroUsd);
+    this.emit();
+  }
+
+  /** Record the on-chain entry-odds proof (third trust link) on a settled position. Records an
+   * error if the position is unknown or not yet settled, so a stray proof cannot corrupt state. */
+  markOddsProven(index: number, proof: { readonly txSig: string; readonly explorerUrl: string }): void {
+    const entry = this.positions.get(index);
+    if (entry === undefined || entry.settlement === null) {
+      this.recordError('prove-odds', `#${index}: entry-odds proof for an unknown or unsettled position`);
+      return;
+    }
+    entry.settlement = {
+      ...entry.settlement,
+      entryOddsProven: true,
+      oddsProofTxSig: proof.txSig,
+      oddsProofExplorerUrl: proof.explorerUrl,
+    };
     this.emit();
   }
 

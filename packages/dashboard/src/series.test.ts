@@ -42,6 +42,9 @@ const settled = (
     clvProb,
     txSig: `settle-${index}`,
     explorerUrl: `https://explorer/settle/${index}`,
+    entryOddsProven: false,
+    oddsProofTxSig: null,
+    oddsProofExplorerUrl: null,
   },
 });
 

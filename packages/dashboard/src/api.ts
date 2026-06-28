@@ -39,6 +39,10 @@ export type SettleView = {
   readonly clvProb: number;
   readonly txSig: string;
   readonly explorerUrl: string;
+  // The third trust link: set once prove_entry_odds proves the sealed entry price on-chain.
+  readonly entryOddsProven: boolean;
+  readonly oddsProofTxSig: string | null;
+  readonly oddsProofExplorerUrl: string | null;
 };
 
 export type AgentErrorView = { readonly stage: string; readonly detail: string; readonly atMs: number };

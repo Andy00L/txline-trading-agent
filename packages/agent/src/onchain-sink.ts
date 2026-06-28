@@ -11,12 +11,14 @@ import {
   type CommitReceipt,
   type CommitRequest,
   type OnChainError,
+  type ProveOddsArgsInput,
   type RevealArgs,
   type SettleReceipt,
   type SettleRequest,
   type StrategyAccount,
 } from '@txline-agent/onchain-client';
 import type { ScoresStatValidation, TxlineError } from '@txline-agent/txline';
+import { proveEntryOddsForReveal, type OddsProofSource } from './prove-entry-odds.js';
 import { buildRevealFromDecision, SIDE_AWAY, SIDE_DRAW, SIDE_HOME } from './reveal.js';
 import type { AgentStateStore } from './state-store.js';
 
@@ -40,6 +42,10 @@ export interface CommitSettlePort {
   readStrategy(): Promise<Result<StrategyAccount | null, OnChainError>>;
   commit(request: CommitRequest): Promise<Result<CommitReceipt, OnChainError>>;
   settle(request: SettleRequest): Promise<Result<SettleReceipt, OnChainError>>;
+  proveEntryOdds(request: {
+    readonly index: bigint;
+    readonly proveOddsArgs: ProveOddsArgsInput;
+  }): Promise<Result<{ readonly txSig: string; readonly proven: boolean }, OnChainError>>;
 }
 
 /** The subset of TxlineClient the sink needs (the score proof for a settle). */
@@ -63,6 +69,10 @@ const explorerTxUrl = (signature: string): string =>
 export type OnChainSinkDeps = {
   readonly port: CommitSettlePort;
   readonly proofs: ScoresProofSource;
+  // Optional: when present, after a settle the sink also proves the sealed entry odds on-chain
+  // (the third trust link). Absent in tests and any commit/settle-only deployment. Explicit
+  // `| undefined` so a caller may pass it through under exactOptionalPropertyTypes.
+  readonly oddsProofs?: OddsProofSource | undefined;
   readonly store: AgentStateStore;
   readonly strategyBytes: Uint8Array; // 32-byte strategy PDA, precomputed by the runtime
   readonly nextNonce: () => Uint8Array; // a fresh 32-byte sealing nonce per commit (injected)
@@ -74,6 +84,7 @@ type CommittedReveal = { readonly reveal: RevealArgs; readonly onChainIndex: big
 export class OnChainSink implements PipelineSink {
   private readonly port: CommitSettlePort;
   private readonly proofs: ScoresProofSource;
+  private readonly oddsProofs: OddsProofSource | undefined;
   private readonly store: AgentStateStore;
   private readonly strategyBytes: Uint8Array;
   private readonly nextNonce: () => Uint8Array;
@@ -85,6 +96,7 @@ export class OnChainSink implements PipelineSink {
   constructor(deps: OnChainSinkDeps) {
     this.port = deps.port;
     this.proofs = deps.proofs;
+    this.oddsProofs = deps.oddsProofs;
     this.store = deps.store;
     this.strategyBytes = deps.strategyBytes;
     this.nextNonce = deps.nextNonce;
@@ -208,10 +220,51 @@ export class OnChainSink implements PipelineSink {
       clvProb,
       txSig: receipt.value.txSig,
       explorerUrl: explorerTxUrl(receipt.value.txSig),
+      // The entry-odds proof (third trust link) runs after this settle; defaulted here and set by
+      // markOddsProven when validate_odds confirms the sealed entry price was a published quote.
+      entryOddsProven: false,
+      oddsProofTxSig: null,
+      oddsProofExplorerUrl: null,
     });
     this.logLine(
       `[OnChainSink] settled #${position.index} won=${receipt.value.won} pnl=${receipt.value.pnl} ${explorerTxUrl(receipt.value.txSig)}`,
     );
+
+    // Third trust link (best-effort): prove the sealed entry odds were a real published quote. The
+    // settle above already stands as the second link if this finds no record in the window or reverts.
+    if (this.oddsProofs !== undefined) {
+      await this.proveEntryOddsAfterSettle(position.index, pending, validation.ts);
+    }
+  }
+
+  /** After a settle, re-discover the sealed entry odds record and prove it on-chain via
+   * validate_odds, recording the proof tx on the settled position. Best-effort: a skipped proof
+   * (record aged out of the window) is logged, not recorded as a failure, since the settle holds. */
+  private async proveEntryOddsAfterSettle(
+    localIndex: number,
+    pending: CommittedReveal,
+    anchorTs: number,
+  ): Promise<void> {
+    if (this.oddsProofs === undefined) {
+      return;
+    }
+    const outcome = await proveEntryOddsForReveal(
+      { oddsProofs: this.oddsProofs, port: this.port },
+      { reveal: pending.reveal, index: pending.onChainIndex, anchorTs },
+    );
+    if (outcome.kind === 'proven') {
+      this.store.markOddsProven(localIndex, {
+        txSig: outcome.txSig,
+        explorerUrl: explorerTxUrl(outcome.txSig),
+      });
+      this.logLine(`[OnChainSink] entry odds proven #${localIndex} ${explorerTxUrl(outcome.txSig)}`);
+      return;
+    }
+    if (outcome.kind === 'failed') {
+      this.fail('prove-odds', localIndex, outcome.detail);
+      return;
+    }
+    this.logLine(`[OnChainSink] entry-odds proof skipped #${localIndex}: ${outcome.detail}`);
   }
 
   private fail(stage: string, index: number, detail: string): void {

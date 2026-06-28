@@ -63,6 +63,12 @@ export const PositionCard = ({ position }: { readonly position: PositionView }):
             <VerifiedStamp />
             <ExplorerLink url={settlement.explorerUrl} label={shortenSig(settlement.txSig)} />
           </div>
+          {settlement.entryOddsProven && settlement.oddsProofExplorerUrl !== null && (
+            <div className="pos-row">
+              <span className="label">Entry odds proof</span>
+              <ExplorerLink url={settlement.oddsProofExplorerUrl} label="validate_odds ✓" />
+            </div>
+          )}
         </>
       )}
       <ResolutionReceipt position={position} />

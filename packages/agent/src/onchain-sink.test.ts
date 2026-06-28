@@ -20,17 +20,19 @@ import type {
   CommitReceipt,
   CommitRequest,
   OnChainError,
+  ProveOddsArgsInput,
   SettleReceipt,
   SettleRequest,
   StrategyAccount,
 } from '@txline-agent/onchain-client';
-import type { ScoresStatValidation, TxlineError } from '@txline-agent/txline';
+import type { OddsPayload, OddsValidation, ScoresStatValidation, TxlineError } from '@txline-agent/txline';
 import { AgentStateStore } from './state-store.js';
 import {
   OnChainSink,
   type CommitSettlePort,
   type ScoresProofSource,
 } from './onchain-sink.js';
+import type { OddsProofSource } from './prove-entry-odds.js';
 
 const FIXTURE_ID = 17588302;
 const MKEY: MarketKey = marketKey({
@@ -136,6 +138,7 @@ type ProofRequest = {
 class FakePort implements CommitSettlePort {
   decisionsCount = 7n;
   commitError: OnChainError | null = null;
+  proveCalls = 0;
   readonly commits: CommitRequest[] = [];
   readonly settles: SettleRequest[] = [];
 
@@ -157,6 +160,14 @@ class FakePort implements CommitSettlePort {
     this.settles.push(request);
     return ok({ txSig: `settle-sig-${request.index}`, won: true, pnl: 26_000_000n });
   }
+
+  async proveEntryOdds(request: {
+    readonly index: bigint;
+    readonly proveOddsArgs: ProveOddsArgsInput;
+  }): Promise<Result<{ readonly txSig: string; readonly proven: boolean }, OnChainError>> {
+    this.proveCalls += 1;
+    return ok({ txSig: `odds-proof-sig-${request.index}`, proven: true });
+  }
 }
 
 class FakeProofs implements ScoresProofSource {
@@ -173,14 +184,51 @@ class FakeProofs implements ScoresProofSource {
   }
 }
 
+// A 1X2 odds record (home column 0) priced at the committed 2.100, with a matching validation
+// proof, so the sink's post-settle entry-odds proof discovers it and proves the third link.
+const ENTRY_PRICES = [2100, 3000, 4000];
+const oneX2OddsRecord: OddsPayload = {
+  FixtureId: FIXTURE_ID,
+  MessageId: 'odds-msg-1',
+  Ts: 1_700_000_000_000,
+  Bookmaker: 'TXLineStablePriceDemargined',
+  BookmakerId: 1,
+  SuperOddsType: '1X2_PARTICIPANT_RESULT',
+  InRunning: false,
+  PriceNames: ['part1', 'draw', 'part2'],
+  Prices: ENTRY_PRICES,
+};
+const oneX2OddsValidation: OddsValidation = {
+  odds: oneX2OddsRecord,
+  summary: {
+    fixtureId: FIXTURE_ID,
+    updateStats: { updateCount: 1, minTimestamp: 1_700_000_000_000, maxTimestamp: 1_700_000_000_000 },
+    oddsSubTreeRoot: ROOT_32,
+  },
+  subTreeProof: [],
+  mainTreeProof: [],
+};
+
+class FakeOddsProofs implements OddsProofSource {
+  async getOddsUpdates(): Promise<Result<readonly OddsPayload[], TxlineError>> {
+    return ok([oneX2OddsRecord]);
+  }
+
+  async getOddsValidation(): Promise<Result<OddsValidation, TxlineError>> {
+    return ok(oneX2OddsValidation);
+  }
+}
+
 const buildSink = (
   port: CommitSettlePort,
   proofs: ScoresProofSource,
   store: AgentStateStore,
+  oddsProofs?: OddsProofSource,
 ): OnChainSink =>
   new OnChainSink({
     port,
     proofs,
+    oddsProofs,
     store,
     strategyBytes: new Uint8Array(32).fill(3),
     nextNonce: () => new Uint8Array(32).fill(9),
@@ -277,5 +325,35 @@ describe('OnChainSink', () => {
     expect(snapshot.settlesCount).toBe(0);
     expect(snapshot.errorsCount).toBe(1);
     expect(snapshot.positions[0]?.status).toBe('committed');
+  });
+
+  it('proves the sealed entry odds after settle and records the third trust link', async () => {
+    const port = new FakePort();
+    const proofs = new FakeProofs();
+    const store = new AgentStateStore({ clock: new FixedClock(), startingBankroll: 0n });
+    const sink = buildSink(port, proofs, store, new FakeOddsProofs());
+
+    await sink.onCommit(committedPosition);
+    await sink.onSettle(settledPosition('home'));
+
+    // proveEntryOdds targets the on-chain index captured at commit (7), not the local index.
+    expect(port.proveCalls).toBe(1);
+    const snapshot = store.snapshot();
+    expect(snapshot.positions[0]?.settlement?.entryOddsProven).toBe(true);
+    expect(snapshot.positions[0]?.settlement?.oddsProofTxSig).toBe('odds-proof-sig-7');
+    expect(snapshot.positions[0]?.settlement?.oddsProofExplorerUrl).toContain('odds-proof-sig-7');
+    expect(snapshot.errorsCount).toBe(0);
+  });
+
+  it('settles without the third link when no odds-proof source is configured', async () => {
+    const port = new FakePort();
+    const store = new AgentStateStore({ clock: new FixedClock(), startingBankroll: 0n });
+    const sink = buildSink(port, new FakeProofs(), store);
+
+    await sink.onCommit(committedPosition);
+    await sink.onSettle(settledPosition('home'));
+
+    expect(port.proveCalls).toBe(0);
+    expect(store.snapshot().positions[0]?.settlement?.entryOddsProven).toBe(false);
   });
 });

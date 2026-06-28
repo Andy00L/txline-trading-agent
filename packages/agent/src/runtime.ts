@@ -96,6 +96,9 @@ export const createAgentRuntime = (deps: CreateAgentRuntimeDeps): AgentRuntime =
   const sink = new OnChainSink({
     port: deps.port,
     proofs: deps.client,
+    // Same client drives the third trust link: scan the odds feed for the sealed entry record and
+    // fetch its Merkle proof, so the live agent proves entry odds (validate_odds) after each settle.
+    oddsProofs: deps.client,
     store: deps.store,
     strategyBytes: deps.strategyBytes,
     nextNonce: deps.nextNonce,
