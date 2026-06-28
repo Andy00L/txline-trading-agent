@@ -20,6 +20,7 @@ export type PositionStatus = 'committed' | 'settled';
 export type CommitView = {
   readonly index: number; // pipeline-local index (matches a settlement)
   readonly onChainIndex: string; // the on-chain decisions_count used for this commit
+  readonly commitHash: string; // keccak256(borsh(reveal)) sealed on-chain, lowercase hex (64 chars)
   readonly fixtureId: number;
   readonly marketKey: string;
   readonly outcome: string;

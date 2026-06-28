@@ -13,6 +13,7 @@ export type PositionStatus = 'committed' | 'settled';
 export type CommitView = {
   readonly index: number;
   readonly onChainIndex: string;
+  readonly commitHash: string; // keccak256(borsh(reveal)) sealed on-chain, lowercase hex (64 chars)
   readonly fixtureId: number;
   readonly marketKey: string;
   readonly outcome: string;

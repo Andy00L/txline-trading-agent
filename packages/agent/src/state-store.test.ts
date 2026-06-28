@@ -17,6 +17,7 @@ class FixedClock implements Clock {
 const commitView = (index: number): CommitView => ({
   index,
   onChainIndex: String(index),
+  commitHash: 'ab'.repeat(32),
   fixtureId: 100 + index,
   marketKey: `100${index}:1X2:FT:`,
   outcome: 'home',

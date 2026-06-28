@@ -7,6 +7,8 @@ import {
   formatUsd,
   isNegativeMicro,
   outcomeLabel,
+  predicateForOutcome,
+  shortenHash,
   shortenSig,
 } from './format';
 
@@ -55,5 +57,19 @@ describe('other formatters', () => {
     expect(shortenSig('short')).toBe('short');
     expect(outcomeLabel('home')).toBe('Home');
     expect(outcomeLabel('unknown')).toBe('unknown');
+  });
+});
+
+describe('shortenHash and predicateForOutcome', () => {
+  it('shortens a 64-char commit hash and leaves a short one intact', () => {
+    expect(shortenHash('ab'.repeat(32))).toBe('ababababab…abababab');
+    expect(shortenHash('deadbeef')).toBe('deadbeef');
+  });
+
+  it('maps a committed outcome to the on-chain 1X2 predicate', () => {
+    expect(predicateForOutcome('home')).toBe('participant1 - participant2 goals > 0');
+    expect(predicateForOutcome('draw')).toBe('participant1 - participant2 goals == 0');
+    expect(predicateForOutcome('away')).toBe('participant1 - participant2 goals < 0');
+    expect(predicateForOutcome('other')).toBe('participant goal difference');
   });
 });

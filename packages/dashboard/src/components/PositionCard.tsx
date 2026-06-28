@@ -11,6 +11,7 @@ import {
   shortenSig,
 } from '../format';
 import { ExplorerLink, StatusPill, VerifiedStamp } from './primitives';
+import { ResolutionReceipt } from './ResolutionReceipt';
 
 const Row = ({ label, children }: { readonly label: string; readonly children: ReactNode }): ReactNode => (
   <div className="pos-row">
@@ -64,6 +65,7 @@ export const PositionCard = ({ position }: { readonly position: PositionView }):
           </div>
         </>
       )}
+      <ResolutionReceipt position={position} />
     </div>
   );
 };

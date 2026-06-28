@@ -86,6 +86,7 @@ Base host: `txline-dev.txodds.com` (both auth and data).
 | `/api/odds/snapshot/{fixtureId}` | GET | Point-in-time odds snapshot (`TxlineClient.getOddsSnapshot`). |
 | `/api/scores/snapshot/{fixtureId}` | GET | Point-in-time scores snapshot (`TxlineClient.getScoresSnapshot`). |
 | `/api/scores/stat-validation?fixtureId&seq&statKey&statKey2` | GET | The three-stage Merkle proof for the home and away goal stats, the input to the `validate_stat` settle CPI (`TxlineClient.getScoresStatValidation`). |
+| `/api/odds/validation?messageId&ts` | GET | The Merkle proof and snapshot for one odds update, keyed by its `MessageId` and `Ts`; the input to the `prove_entry_odds` / `validate_odds` entry-odds proof (`TxlineClient.getOddsValidation`). |
 
 On-chain, the agent CPIs into `txoracle::validate_stat` (devnet
 `6pW64gN1s2uqjHkn1unFeEjAwJkPGHoppGvS715wyP2J`) with a single read-only `daily_scores_merkle_roots`
@@ -157,9 +158,9 @@ Friction we hit (all surmountable, noted to help the next integrator):
   replay feed. Documenting that finality must be read from `StatusId` on `/updates` (and that the
   goal totals appear in `Stats` keys 1 and 2 well before any final string) would prevent a silent
   "nothing ever settles" failure.
-- Merkle hash and root fields arrive as 32-byte arrays (`number[32]`) on the wire, not the hex
-  strings the OpenAPI "binary" format suggested. Calling this out explicitly would prevent a
-  class of encoding bugs.
+- Merkle hash and root fields arrive as 32-byte integer arrays (`number[32]`) on the wire, not
+  the base64 byte-strings the OpenAPI `binary` string format implies. Documenting the array
+  encoding explicitly would prevent a class of encoding bugs.
 - `validate_stat` is participant-indexed (stat keys 1 and 2 are participant 1 and participant 2
   goals), but the odds payload does not carry a `participant1IsHome` flag at commit time, so a
   home/away mapping cannot be sealed at commit. We keep the whole trust chain in participant

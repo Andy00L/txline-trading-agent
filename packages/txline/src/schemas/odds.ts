@@ -4,7 +4,9 @@ import { PCT_NUMBER_PATTERN } from '@txline-agent/core';
 /**
  * Odds payload from the odds channel (SSE stream and REST snapshots).
  * sourceRef: OpenAPI OddsPayload (txline-docs.txodds.com/api-reference/openapi.json, v1.5.2).
- * The odds channel uses PascalCase field names (the scores channel uses camelCase).
+ * Both the odds and scores channels use PascalCase field names on the wire (confirmed against
+ * live captures 2026-06-26 and 2026-06-28; the public docs prose describes camelCase, which the
+ * live feed does not match).
  * Schemas are non-strict so unknown future fields are ignored rather than rejected.
  */
 export const oddsPayloadSchema = z.object({

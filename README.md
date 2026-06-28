@@ -1,6 +1,6 @@
 # 🤖 TxLINE autonomous odds-trading agent
 
-![Tests](https://img.shields.io/badge/tests-307%20passing-1F8A5B) ![Solana](https://img.shields.io/badge/Solana-devnet-2B5FD9) ![Mode](https://img.shields.io/badge/mode-paper%20trading-6B7280) ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6) ![Anchor](https://img.shields.io/badge/Anchor-0.31-512BD4)
+![Tests](https://img.shields.io/badge/tests-314%20passing-1F8A5B) ![Solana](https://img.shields.io/badge/Solana-devnet-2B5FD9) ![Mode](https://img.shields.io/badge/mode-paper%20trading-6B7280) ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6) ![Anchor](https://img.shields.io/badge/Anchor-0.31-512BD4)
 
 ![TxLINE agent operator dashboard: live feed status, the ingest to settle pipeline, and the committed and settled position ledger with on-chain Verified on Solana stamps](docs/assets/dashboard.png)
 
@@ -40,7 +40,7 @@ live behaviour, not a separate script.
 M0-M9 complete, followed by a review-and-harden pass, a cross-market strategy upgrade (a
 goals-model relative-value signal across the full odds surface, replacing steam-following), an
 independent Elo market-decorrelation stake overlay, and an implemented on-chain entry-odds proof
-(`prove_entry_odds` via `txoracle::validate_odds`). **295 TypeScript tests + 12 Rust tests (307
+(`prove_entry_odds` via `txoracle::validate_odds`). **302 TypeScript tests + 12 Rust tests (314
 total), all green**, with `typecheck`, `lint`, a coding-standards gate, and a core-purity gate all
 passing. The `agent_ledger` program is deployed and the full settle trust chain is proven on devnet
 (commit before reveal, CPI-settle, and three rejection cases: tampered root, mismatched fixture,
@@ -74,7 +74,7 @@ onchain-client @solana/kit client: commit/settle, the validate_stat CPI args, ac
 agent          composition root: LiveSseFeed -> runPipeline -> an on-chain sink; state store
 api            read-only HTTP + SSE projection of the agent's state (node:http, no framework)
 backtest       replay harness: CLV, calibration, drawdown, walk-forward; deterministic report
-dashboard      Vite + React operator console, reads the API over HTTP/SSE only
+dashboard      Vite + React operator console (proof receipts + equity/CLV charts), reads the API over HTTP/SSE only
 programs/agent_ledger   the Anchor program: commit-reveal + the validate_stat CPI settle
 ```
 
@@ -90,7 +90,7 @@ and [docs/runbooks/M4-devnet.md](docs/runbooks/M4-devnet.md).
 
 ```bash
 pnpm install
-pnpm verify            # typecheck + 295 tests + lint + standards + core-purity, all green
+pnpm verify            # typecheck + 302 tests + lint + standards + core-purity, all green
 ```
 
 Run the backtest (the proof centerpiece; needs the TxLINE token). `backtest:sweep` aggregates the
@@ -173,7 +173,10 @@ against the published odds Merkle root, so the committed entry price cannot be b
 than the outcome can. It is covered by program tests and a cross-language borsh golden, and is now
 deployed and proven on devnet: `prove:e2e` proved an entry price against the published odds Merkle
 root (a `DecisionOddsProven` decision) and rejected a tampered price, so all three trust links run
-on the live program. Verification type details and the
+on the live program. The operator dashboard surfaces this as a per-decision **resolution receipt**
+(the sealed commit hash, the revealed fields, the `validate_stat` predicate, and the settle CPI,
+each linking to its transaction), next to a live equity curve and a per-bet closing-line-value
+chart. Verification type details and the
 trust model are in [docs/submission/TECHNICAL.md](docs/submission/TECHNICAL.md).
 
 ## 📦 Submission

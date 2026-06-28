@@ -41,6 +41,7 @@ describe('startApiServer', () => {
     store.recordCommit({
       index: 0,
       onChainIndex: '7',
+      commitHash: 'cd'.repeat(32),
       fixtureId: 17588302,
       marketKey: '17588302:1X2:FT:',
       outcome: 'home',

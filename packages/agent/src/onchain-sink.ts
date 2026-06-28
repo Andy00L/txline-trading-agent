@@ -133,6 +133,9 @@ export class OnChainSink implements PipelineSink {
     this.store.recordCommit({
       index: position.index,
       onChainIndex: receipt.value.index.toString(),
+      // The sealed commitment, already public on-chain at commit time: keccak256(borsh(reveal))
+      // as lowercase hex. The receipt UI shows it so a viewer can match it to the commit tx.
+      commitHash: Buffer.from(commitHash.value).toString('hex'),
       fixtureId: position.decision.fixtureId,
       marketKey: position.decision.marketKey,
       outcome: position.decision.outcome,

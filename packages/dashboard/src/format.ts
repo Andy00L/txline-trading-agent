@@ -64,3 +64,20 @@ const OUTCOME_LABELS: Readonly<Record<string, string>> = {
 };
 
 export const outcomeLabel = (outcome: string): string => OUTCOME_LABELS[outcome] ?? outcome;
+
+/** A keccak commit hash (64 hex chars) shortened for display; the full value is kept in a
+ * title attribute so it stays copyable and verifiable against the commit transaction. */
+export const shortenHash = (hexHash: string): string =>
+  hexHash.length <= 18 ? hexHash : `${hexHash.slice(0, 10)}…${hexHash.slice(-8)}`;
+
+// The on-chain 1X2 predicate proven at settle, derived from the committed side: the program
+// checks participant1 minus participant2 goals against zero. sourceRef: programs/agent_ledger
+// logic.rs (the 1X2 predicate is participant1 - participant2 > 0 home, == 0 draw, < 0 away).
+const PREDICATE_BY_OUTCOME: Readonly<Record<string, string>> = {
+  home: 'participant1 - participant2 goals > 0',
+  draw: 'participant1 - participant2 goals == 0',
+  away: 'participant1 - participant2 goals < 0',
+};
+
+export const predicateForOutcome = (outcome: string): string =>
+  PREDICATE_BY_OUTCOME[outcome] ?? 'participant goal difference';

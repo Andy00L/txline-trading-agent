@@ -1,8 +1,12 @@
 import { Fragment, type ReactNode } from 'react';
 import type { AgentSnapshot } from './api';
+import { ClvChart } from './components/ClvChart';
+import { EquityCurve } from './components/EquityCurve';
 import { PositionCard } from './components/PositionCard';
+import { TrustChain } from './components/TrustChain';
 import { PhaseDot, StatusPill, type PhaseState, type PillTone } from './components/primitives';
 import { formatPnl, formatUsd, isNegativeMicro } from './format';
+import { buildClvSeries, buildEquitySeries, summarizeClv } from './series';
 import { useAgentState } from './useAgentState';
 
 type Phase = { readonly label: string; readonly state: PhaseState; readonly count?: string };
@@ -29,9 +33,27 @@ const derivePhases = (snapshot: AgentSnapshot): readonly Phase[] => {
 const feedTone = (kind: string): PillTone =>
   kind === 'connected' ? 'live' : kind === 'reconnecting' ? 'error' : 'idle';
 
-const Stat = ({ value, label }: { readonly value: string; readonly label: string }): ReactNode => (
+const Stat = ({
+  value,
+  label,
+  flashKey,
+}: {
+  readonly value: string;
+  readonly label: string;
+  readonly flashKey?: number;
+}): ReactNode => (
   <div className="ss-card stat">
-    <div className="stat-value ss-tab">{value}</div>
+    <div className="stat-value ss-tab">
+      {flashKey === undefined ? (
+        value
+      ) : (
+        // Remount on each change so the brief ingest flash replays: a real-time cue that the
+        // live feed is advancing, visible even between the slower settlement updates.
+        <span key={flashKey} className="stat-flash">
+          {value}
+        </span>
+      )}
+    </div>
     <div className="stat-label">{label}</div>
   </div>
 );
@@ -73,7 +95,11 @@ const Header = ({
       </p>
       {snapshot && (
         <div className="stat-grid">
-          <Stat value={`${snapshot.eventsProcessed}`} label="Events ingested" />
+          <Stat
+            value={`${snapshot.eventsProcessed}`}
+            label="Events ingested"
+            flashKey={snapshot.eventsProcessed}
+          />
           <Stat value={`${snapshot.commitsCount}`} label="Decisions committed" />
           <Stat value={`${snapshot.settlesCount}`} label="Settled on-chain" />
           <Stat value={formatUsd(snapshot.bankrollMicroUsd)} label="Bankroll (paper)" />
@@ -94,9 +120,14 @@ export const App = (): ReactNode => {
     );
   }
   const phases = derivePhases(snapshot);
+  const equity = buildEquitySeries(snapshot);
+  const clvPoints = buildClvSeries(snapshot);
+  const clvSummary = summarizeClv(clvPoints);
   return (
     <div className="app">
       <Header snapshot={snapshot} connected={connected} />
+
+      <TrustChain />
 
       <div className="section-title">Pipeline</div>
       <div className="ss-card pipeline" style={{ padding: '18px 20px' }}>
@@ -110,6 +141,12 @@ export const App = (): ReactNode => {
             </div>
           </Fragment>
         ))}
+      </div>
+
+      <div className="section-title">Performance</div>
+      <div className="chart-grid">
+        <EquityCurve series={equity} />
+        <ClvChart points={clvPoints} summary={clvSummary} />
       </div>
 
       <div className="section-title">Position ledger</div>
