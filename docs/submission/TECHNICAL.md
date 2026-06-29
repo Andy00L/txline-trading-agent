@@ -60,7 +60,11 @@ interval, the metric a professional trading desk tracks, alongside calibration a
 - The commit-reveal binding is a keccak over a borsh layout that is byte-identical between the
   Rust program and the TypeScript client, pinned by a cross-language golden hash on both sides.
 - `validate_stat` proof args are assembled from the three-stage scores proof and travel as
-  instruction data, never stored on-chain, so account sizes are independent of proof depth.
+  instruction data, never stored on-chain, so account sizes are independent of proof depth. The
+  trade-off is a known limitation: the proof bytes count against the transaction size, so a fixture
+  with a very deep daily Merkle tree can push the settle past the 1232-byte legacy-transaction limit;
+  that settle is then skipped and logged rather than mis-settled (most fixtures fit, and lifting this
+  would need a multi-transaction proof submission).
 - Resilience: SSE reconnect with exponential backoff and full jitter, one JWT re-auth on 401,
   REST gap-backfill on reconnect, and idempotency keyed by `MessageId` and `(fixtureId, seq)`.
 - A broad TypeScript test suite plus Rust program tests; a security audit (docs/audit/M8-audit.md)

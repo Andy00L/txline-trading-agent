@@ -110,6 +110,9 @@ importers:
       '@txline-agent/agent':
         specifier: workspace:*
         version: link:../../packages/agent
+      '@txline-agent/api':
+        specifier: workspace:*
+        version: link:../../packages/api
       '@txline-agent/backtest':
         specifier: workspace:*
         version: link:../../packages/backtest

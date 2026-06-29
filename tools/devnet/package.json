@@ -10,11 +10,14 @@
     "settle:e2e": "node --env-file=../../.env dist/settle-e2e.js",
     "prove:e2e": "node --env-file=../../.env dist/prove-odds-e2e.js",
     "prove:live": "node --env-file=../../.env dist/prove-odds-live.js",
+    "demo:dashboard": "node --env-file=../../.env dist/demo-dashboard.js",
+    "demo:seed": "node dist/seed-dashboard.js",
     "backtest:run": "node --max-old-space-size=7168 --env-file=../../.env dist/backtest-run.js",
     "backtest:sweep": "node --max-old-space-size=7168 --env-file=../../.env dist/backtest-sweep.js"
   },
   "dependencies": {
     "@txline-agent/agent": "workspace:*",
+    "@txline-agent/api": "workspace:*",
     "@txline-agent/backtest": "workspace:*",
     "@txline-agent/core": "workspace:*",
     "@txline-agent/onchain-client": "workspace:*",

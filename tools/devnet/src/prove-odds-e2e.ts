@@ -347,6 +347,108 @@ export const selectProofTarget = async (
   return fail(`none of the ${finished.size} finished fixtures had a fresh validating 1X2 odds proof; the odds aged out of the validation window`);
 };
 
+// Collect up to maxCount DISTINCT finished fixtures that each have a settleable score AND a fresh
+// 1X2 odds proof, for driving several decisions through the live sink (the demo dashboard). Reuses
+// the same discovery as selectProofTarget; returns fewer than maxCount if not enough are fresh, and
+// an empty array if none are (unlike selectProofTarget, it does not exit the process).
+export const collectProofTargets = async (
+  txline: TxlineClient,
+  envFixtureId: number,
+  envSeq: number,
+  maxCount: number,
+): Promise<ProofTarget[]> => {
+  const targets: ProofTarget[] = [];
+  const seen = new Set<number>();
+  const addUnique = (target: ProofTarget | null): void => {
+    if (target !== null && !seen.has(target.fixtureId)) {
+      seen.add(target.fixtureId);
+      targets.push(target);
+    }
+  };
+
+  addUnique(await resolveProofTarget(txline, envFixtureId, envSeq));
+  if (targets.length >= maxCount) {
+    return targets.slice(0, maxCount);
+  }
+
+  let anchorTs = Date.now();
+  const envScore = await txline.getScoresStatValidation({
+    fixtureId: envFixtureId,
+    seq: envSeq,
+    statKey: STAT_KEY_PARTICIPANT1,
+    statKey2: STAT_KEY_PARTICIPANT2,
+  });
+  if (envScore.ok && envScore.value.ts > anchorTs) {
+    anchorTs = envScore.value.ts;
+  }
+
+  const finished = await discoverFinishedFixtures(txline, anchorTs);
+  const candidates = [...finished.values()];
+  const maxAttempts = Math.min(candidates.length, 20);
+  for (let attempt = 0; attempt < maxAttempts && targets.length < maxCount; attempt += 1) {
+    const candidate = candidates[attempt];
+    if (candidate === undefined || seen.has(candidate.fixtureId)) {
+      continue;
+    }
+    addUnique(await resolveProofTarget(txline, candidate.fixtureId, candidate.seq));
+  }
+  return targets.slice(0, maxCount);
+};
+
+// A finished fixture with a settleable two-stat score, with no fresh-odds requirement: enough to
+// commit and settle (validate_stat), used to populate the demo dashboard's charts with several
+// settled positions even when only a couple of fixtures still have fresh odds for the entry proof.
+export type SettleTarget = {
+  readonly fixtureId: number;
+  readonly seq: number;
+  readonly resultSide: number;
+};
+
+export const collectSettleTargets = async (
+  txline: TxlineClient,
+  envFixtureId: number,
+  envSeq: number,
+  maxCount: number,
+): Promise<SettleTarget[]> => {
+  const collected: SettleTarget[] = [];
+  const seen = new Set<number>();
+  let anchorTs = Date.now();
+  const envScore = await txline.getScoresStatValidation({
+    fixtureId: envFixtureId,
+    seq: envSeq,
+    statKey: STAT_KEY_PARTICIPANT1,
+    statKey2: STAT_KEY_PARTICIPANT2,
+  });
+  if (envScore.ok && envScore.value.ts > anchorTs) {
+    anchorTs = envScore.value.ts;
+  }
+  const finished = await discoverFinishedFixtures(txline, anchorTs);
+  for (const fixture of finished.values()) {
+    if (collected.length >= maxCount) {
+      break;
+    }
+    if (seen.has(fixture.fixtureId)) {
+      continue;
+    }
+    const score = await txline.getScoresStatValidation({
+      fixtureId: fixture.fixtureId,
+      seq: fixture.seq,
+      statKey: STAT_KEY_PARTICIPANT1,
+      statKey2: STAT_KEY_PARTICIPANT2,
+    });
+    if (!score.ok || score.value.statToProve2 === undefined) {
+      continue;
+    }
+    seen.add(fixture.fixtureId);
+    collected.push({
+      fixtureId: fixture.fixtureId,
+      seq: fixture.seq,
+      resultSide: resultSideFromGoals(score.value.statToProve.value, score.value.statToProve2.value),
+    });
+  }
+  return collected;
+};
+
 // Build the sealed reveal for a decision. side, entryOddsMilli, and stake are the sealed economics;
 // the rest mirror settle-e2e.ts so the cross-language commit-hash golden stays the reference.
 const buildReveal = (input: {

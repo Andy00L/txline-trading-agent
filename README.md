@@ -4,7 +4,7 @@
 
 ![TxLINE agent operator dashboard: live feed status, a commit to settle to proven trust-chain band, the ingest-to-settle pipeline, an equity curve and a per-bet closing-line-value chart, and the position ledger with per-decision proof receipts and on-chain Verified on Solana stamps](docs/assets/dashboard.png)
 
-> The operator console: the commit -> settle -> proven trust chain, live equity and closing-line-value charts, and a per-decision proof receipt (the sealed commit hash, the `validate_stat` predicate, and the `validate_odds` entry-odds proof), each linking to its Solana transaction.
+> The operator console: the commit -> settle -> proven trust chain, live equity and closing-line-value charts, and a per-decision proof receipt (the sealed commit hash, the `validate_stat` predicate, and the `validate_odds` entry-odds proof), each linking to its Solana transaction. This is a representative example state for legibility (rendered by `demo:seed`); the genuine on-chain capture, driven through the live sink by `demo:dashboard`, is [docs/assets/dashboard-live.png](docs/assets/dashboard-live.png), and every verified transaction is in the devnet-artifact table below.
 
 An autonomous, deterministic agent that ingests the live TxLINE World Cup feed (odds and
 scores, Merkle-anchored on Solana), trades a **cross-market relative-value strategy** across the
